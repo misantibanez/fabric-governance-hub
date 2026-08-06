@@ -1,4 +1,4 @@
-# Fabric Workspace Manager
+# Fabric Governance Hub
 
 > **Provision, govern, and visualize your Microsoft Fabric workspaces — in minutes, not hours.**
 
