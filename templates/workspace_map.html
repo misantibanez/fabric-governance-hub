@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace Map</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+
+        /* Filters */
+        .filter-bar { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px 24px; margin-bottom: 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+        .filter-bar label { font-size: 13px; font-weight: 600; color: #6D6E71; }
+        .filter-bar select { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; min-width: 200px; }
+        .filter-bar select:focus { outline: none; border-color: #F37021; }
+        .filter-bar .filter-group { display: flex; flex-direction: column; gap: 4px; }
+        .tag-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip { padding: 6px 14px; border-radius: 16px; border: 2px solid #c8c6c4; background: white; font-size: 13px; font-weight: 600; color: #6D6E71; cursor: pointer; transition: all 0.15s; }
+        .chip:hover { border-color: #F37021; color: #F37021; }
+        .chip.active { color: white; }
+        .chip-env.active { background: #107c10; border-color: #107c10; }
+        .chip-bu.active { background: #0078d4; border-color: #0078d4; }
+        .chip-branch.active { background: #6b3fa0; border-color: #6b3fa0; }
+
+        /* Domain row */
+        .domain-section { margin-bottom: 32px; }
+        .domain-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px 20px; background: linear-gradient(135deg, #6D6E71, #555658); border-radius: 8px; color: white; }
+        .domain-header h2 { font-size: 18px; font-weight: 600; }
+        .domain-header .count { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+
+        /* Tag row inside domain */
+        .tag-row { margin-bottom: 20px; margin-left: 16px; }
+        .tag-label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 16px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+
+        /* Workspace lanes */
+        .ws-lanes { display: flex; gap: 16px; margin-left: 16px; overflow-x: auto; padding-bottom: 8px; }
+        .ws-lane { min-width: 260px; flex-shrink: 0; }
+        .lane-header { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; border-radius: 6px 6px 0 0; text-align: center; color: white; }
+        .lane-pii { background: #d13438; }
+        .lane-ref { background: #0078d4; }
+        .lane-tag { background: #6b3fa0; }
+        .lane-other { background: #6D6E71; }
+        .lane-body { background: white; border-radius: 0 0 6px 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); min-height: 60px; padding: 8px; }
+
+        /* Workspace card */
+        .ws-card { background: #faf9f8; border: 1px solid #edebe9; border-radius: 6px; padding: 10px 12px; margin-bottom: 6px; transition: transform 0.15s, box-shadow 0.15s; }
+        .ws-card:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
+        .ws-card .ws-name { font-size: 13px; font-weight: 600; color: #323130; word-break: break-word; }
+        .ws-card .ws-meta { font-size: 11px; color: #6D6E71; margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .ws-card .badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+        .badge-cap { background: #e0f0ff; color: #0078d4; }
+        .badge-tag { background: #e8dfec; color: #6b3fa0; }
+
+        .empty-lane { padding: 16px; text-align: center; color: #a19f9d; font-size: 12px; font-style: italic; }
+
+        /* Summary stats */
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .summary-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px 24px; text-align: center; min-width: 140px; }
+        .summary-card .number { font-size: 28px; font-weight: 700; color: #F37021; }
+        .summary-card .label { font-size: 12px; color: #6D6E71; margin-top: 2px; }
+
+        .no-results { background: white; border-radius: 8px; padding: 48px; text-align: center; color: #a19f9d; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Workspace Map</h1>
+    </header>
+    <div class="container">
+        <!-- Filters -->
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label>Domain</label>
+                <select id="domain-filter" onchange="applyFilters()">
+                    <option value="all">All Domains</option>
+                    {% for d in domains %}
+                    <option value="{{ d.id }}">{{ d.displayName }}</option>
+                    {% endfor %}
+                    {% for s in subdomains %}
+                    <option value="{{ s.id }}">↳ {{ s.displayName }}</option>
+                    {% endfor %}
+                    <option value="none">No Domain</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Environment</label>
+                <div class="tag-chips">
+                    {% for t in tags %}
+                    {% if t.displayName|lower in settings.environments|map('lower')|list %}
+                    <button type="button" class="chip chip-env" data-id="{{ t.id }}" onclick="toggleChip(this)">{{ t.displayName }}</button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Use Case</label>
+                <div class="tag-chips">
+                    {% for t in tags %}
+                    {% if t.displayName|lower in settings.use_cases|map('lower')|list %}
+                    <button type="button" class="chip chip-bu" data-id="{{ t.id }}" onclick="toggleChip(this)">{{ t.displayName }}</button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Branch</label>
+                <div class="tag-chips">
+                    {% for t in tags %}
+                    {% if t.displayName|lower in settings.branches|map('lower')|list %}
+                    <button type="button" class="chip chip-branch" data-id="{{ t.id }}" onclick="toggleChip(this)">{{ t.displayName }}</button>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Capacity</label>
+                <select id="cap-filter" onchange="applyFilters()">
+                    <option value="all">All Capacities</option>
+                    {% for c in capacities %}
+                    <option value="{{ c.id }}">{{ c.displayName }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary" id="summary">
+            <div class="summary-card">
+                <div class="number" id="sum-total">{{ workspaces | length }}</div>
+                <div class="label">Total Workspaces</div>
+            </div>
+            <div class="summary-card">
+                <div class="number" id="sum-pii">0</div>
+                <div class="label">PII Workspaces</div>
+            </div>
+            <div class="summary-card">
+                <div class="number" id="sum-ref">0</div>
+                <div class="label">Reference Assets</div>
+            </div>
+            <div class="summary-card">
+                <div class="number" id="sum-tagged">0</div>
+                <div class="label">Tagged</div>
+            </div>
+            <div class="summary-card">
+                <div class="number" id="sum-domains">0</div>
+                <div class="label">With Domain</div>
+            </div>
+        </div>
+
+        <!-- Map content rendered by JS -->
+        <div id="map-content"></div>
+    </div>
+
+    <script>
+    const workspaces = {{ workspaces_json | safe }};
+    const domainMap = {{ domain_map_json | safe }};
+    const capacityMap = {{ capacity_map_json | safe }};
+
+    function classifyWorkspace(ws) {
+        const name = (ws.displayName || ws.name || '').toLowerCase();
+        if (name.includes('pii')) return 'pii';
+        if (name.includes('reference') && name.includes('asset')) return 'ref';
+        // Check if name contains any tag name
+        const tags = ws.tags || [];
+        for (const t of tags) {
+            if (name.includes(t.displayName.toLowerCase())) return 'tag';
+        }
+        return 'other';
+    }
+
+    function applyFilters() {
+        const domainVal = document.getElementById('domain-filter').value;
+        const tagVals = Array.from(document.querySelectorAll('.chip.active')).map(c => c.dataset.id);
+        const capVal = document.getElementById('cap-filter').value;
+
+        let filtered = workspaces.filter(ws => {
+            if (ws.type && ws.type !== 'Workspace') return false;
+            if (domainVal !== 'all') {
+                if (domainVal === 'none') { if (ws.domainId) return false; }
+                else { if (ws.domainId !== domainVal) return false; }
+            }
+            if (tagVals.length > 0) {
+                const wsTags = (ws.tags || []).map(t => t.id);
+                if (!tagVals.every(tv => wsTags.includes(tv))) return false;
+            }
+            if (capVal !== 'all') {
+                if (ws.capacityId !== capVal) return false;
+            }
+            return true;
+        });
+
+        // Group by domain
+        const byDomain = {};
+        filtered.forEach(ws => {
+            const did = ws.domainId || '__none__';
+            if (!byDomain[did]) byDomain[did] = [];
+            byDomain[did].push(ws);
+        });
+
+        // Sort domains: named domains first, then "No Domain"
+        const domainOrder = Object.keys(byDomain).sort((a, b) => {
+            if (a === '__none__') return 1;
+            if (b === '__none__') return -1;
+            return (domainMap[a] || '').localeCompare(domainMap[b] || '');
+        });
+
+        // Update summary
+        let piiCount = 0, refCount = 0, tagCount = 0, domainCount = 0;
+        filtered.forEach(ws => {
+            const cls = classifyWorkspace(ws);
+            if (cls === 'pii') piiCount++;
+            if (cls === 'ref') refCount++;
+            if (cls === 'tag') tagCount++;
+            if (ws.domainId) domainCount++;
+        });
+        document.getElementById('sum-total').textContent = filtered.length;
+        document.getElementById('sum-pii').textContent = piiCount;
+        document.getElementById('sum-ref').textContent = refCount;
+        document.getElementById('sum-tagged').textContent = tagCount;
+        document.getElementById('sum-domains').textContent = domainCount;
+
+        // Render
+        const container = document.getElementById('map-content');
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="no-results">No workspaces match the selected filters.</div>';
+            return;
+        }
+
+        let html = '';
+        domainOrder.forEach(did => {
+            const domainName = did === '__none__' ? 'No Domain' : (domainMap[did] || did);
+            const domainWs = byDomain[did];
+
+            // Classify and sort: pii first, then ref, then tag-match, then other
+            const classified = domainWs.map(ws => ({ ws, cls: classifyWorkspace(ws) }));
+            const order = { pii: 0, ref: 1, tag: 2, other: 3 };
+            classified.sort((a, b) => order[a.cls] - order[b.cls]);
+
+            const lanes = { pii: [], ref: [], tag: [], other: [] };
+            classified.forEach(({ ws, cls }) => lanes[cls].push(ws));
+
+            html += `<div class="domain-section">`;
+            html += `<div class="domain-header"><h2>${domainName}</h2><span class="count">${domainWs.length} workspace(s)</span></div>`;
+            html += `<div class="ws-lanes">`;
+
+            if (lanes.pii.length > 0) html += renderLane('PII', 'lane-pii', lanes.pii);
+            if (lanes.ref.length > 0) html += renderLane('Reference Assets', 'lane-ref', lanes.ref);
+            if (lanes.tag.length > 0) html += renderLane('Tag Match', 'lane-tag', lanes.tag);
+            if (lanes.other.length > 0) html += renderLane('Other', 'lane-other', lanes.other);
+
+            html += `</div></div>`;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function renderLane(title, cssClass, wsList) {
+        let html = `<div class="ws-lane">`;
+        html += `<div class="lane-header ${cssClass}">${title} (${wsList.length})</div>`;
+        html += `<div class="lane-body">`;
+        wsList.forEach(ws => {
+            const name = ws.displayName || ws.name || ws.id;
+            const cap = capacityMap[ws.capacityId] || '';
+            const tags = (ws.tags || []).map(t => `<span class="badge badge-tag">${t.displayName}</span>`).join('');
+            html += `<div class="ws-card">`;
+            html += `<div class="ws-name">${name}</div>`;
+            html += `<div class="ws-meta">`;
+            if (cap) html += `<span class="badge badge-cap">${cap}</span>`;
+            html += tags;
+            html += `</div></div>`;
+        });
+        html += `</div></div>`;
+        return html;
+    }
+
+    function toggleChip(el) {
+        el.classList.toggle('active');
+        applyFilters();
+    }
+
+    // Initial render
+    applyFilters();
+    </script>
+</body>
+</html>

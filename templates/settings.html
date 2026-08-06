@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 800px; margin: 0 auto; padding: 24px; }
+        .flash { padding: 12px 24px; margin-bottom: 16px; border-radius: 8px; font-size: 14px; }
+        .flash-success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+        .flash-error { background: #fed9cc; color: #d13438; border: 1px solid #d13438; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 24px; margin-bottom: 24px; }
+        .card h2 { font-size: 18px; font-weight: 600; color: #6D6E71; margin-bottom: 4px; }
+        .card p { font-size: 13px; color: #a19f9d; margin-bottom: 16px; }
+        .tag-group { margin-bottom: 20px; }
+        .tag-group label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
+        .tag-group .color-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+        .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        .tag-item { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 14px; font-size: 13px; font-weight: 600; }
+        .tag-item .remove { cursor: pointer; font-size: 16px; line-height: 1; opacity: 0.6; }
+        .tag-item .remove:hover { opacity: 1; }
+        .tag-env { background: #dff6dd; color: #107c10; }
+        .tag-uc { background: #e0f0ff; color: #0078d4; }
+        .tag-branch { background: #e8dfec; color: #6b3fa0; }
+        .add-row { display: flex; gap: 8px; }
+        .add-row input { padding: 6px 10px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px; flex: 1; }
+        .add-row input:focus { outline: none; border-color: #F37021; }
+        .add-row button { padding: 6px 14px; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; background: #6D6E71; color: white; }
+        .add-row button:hover { background: #555658; }
+        .btn-save { background: #F37021; color: white; border: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .btn-save:hover { background: #d4601a; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Settings</h1>
+    </header>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="/settings">
+            <div class="card">
+                <h2>Tag Groups Configuration</h2>
+                <p>Define which tag names belong to each group. These groups are used in Create Workspace and Workspace Map views.</p>
+
+                <!-- Environment -->
+                <div class="tag-group">
+                    <label><span class="color-dot" style="background: #107c10;"></span>Environment</label>
+                    <div class="tag-list" id="env-list">
+                        {% for t in settings.environments %}
+                        <span class="tag-item tag-env">{{ t }} <span class="remove" onclick="removeTag('env', this)">×</span></span>
+                        {% endfor %}
+                    </div>
+                    <div class="add-row">
+                        <input type="text" id="env-input" placeholder="Add environment tag...">
+                        <button type="button" onclick="addTag('env')">+ Add</button>
+                    </div>
+                    <input type="hidden" name="environments" id="env-hidden" value="{{ settings.environments | join(',') }}">
+                </div>
+
+                <!-- Use Cases -->
+                <div class="tag-group">
+                    <label><span class="color-dot" style="background: #0078d4;"></span>Use Case</label>
+                    <div class="tag-list" id="uc-list">
+                        {% for t in settings.use_cases %}
+                        <span class="tag-item tag-uc">{{ t }} <span class="remove" onclick="removeTag('uc', this)">×</span></span>
+                        {% endfor %}
+                    </div>
+                    <div class="add-row">
+                        <input type="text" id="uc-input" placeholder="Add use case tag...">
+                        <button type="button" onclick="addTag('uc')">+ Add</button>
+                    </div>
+                    <input type="hidden" name="use_cases" id="uc-hidden" value="{{ settings.use_cases | join(',') }}">
+                </div>
+
+                <!-- Branch -->
+                <div class="tag-group">
+                    <label><span class="color-dot" style="background: #6b3fa0;"></span>Branch</label>
+                    <div class="tag-list" id="branch-list">
+                        {% for t in settings.branches %}
+                        <span class="tag-item tag-branch">{{ t }} <span class="remove" onclick="removeTag('branch', this)">×</span></span>
+                        {% endfor %}
+                    </div>
+                    <div class="add-row">
+                        <input type="text" id="branch-input" placeholder="Add branch tag...">
+                        <button type="button" onclick="addTag('branch')">+ Add</button>
+                    </div>
+                    <input type="hidden" name="branches" id="branch-hidden" value="{{ settings.branches | join(',') }}">
+                </div>
+            </div>
+
+            <button type="submit" class="btn-save">Save Settings</button>
+        </form>
+    </div>
+
+    <script>
+    const cssClasses = { env: 'tag-env', uc: 'tag-uc', branch: 'tag-branch' };
+
+    function getTagsFromList(group) {
+        const list = document.getElementById(group + '-list');
+        return Array.from(list.querySelectorAll('.tag-item')).map(el => el.textContent.replace('×', '').trim());
+    }
+
+    function syncHidden(group) {
+        document.getElementById(group + '-hidden').value = getTagsFromList(group).join(',');
+    }
+
+    function addTag(group) {
+        const input = document.getElementById(group + '-input');
+        const val = input.value.trim();
+        if (!val) return;
+        const list = document.getElementById(group + '-list');
+        const span = document.createElement('span');
+        span.className = 'tag-item ' + cssClasses[group];
+        span.innerHTML = val + ' <span class="remove" onclick="removeTag(\'' + group + '\', this)">×</span>';
+        list.appendChild(span);
+        input.value = '';
+        syncHidden(group);
+    }
+
+    function removeTag(group, el) {
+        el.parentElement.remove();
+        syncHidden(group);
+    }
+    </script>
+</body>
+</html>

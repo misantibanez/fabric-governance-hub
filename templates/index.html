@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Tenant Overview</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); text-align: center; }
+        .stat-card .number { font-size: 36px; font-weight: 700; color: #F37021; }
+        .stat-card .label { font-size: 14px; color: #6D6E71; margin-top: 4px; }
+        .section { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 24px; overflow: hidden; }
+        .section-header { padding: 16px 24px; border-bottom: 1px solid #edebe9; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .section-header h2 { font-size: 18px; font-weight: 600; color: #6D6E71; }
+        .section-body { padding: 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; text-align: left; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #6D6E71; border-bottom: 1px solid #edebe9; position: sticky; top: 0; }
+        td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f3f2f1; }
+        tr:hover td { background: #fef5f0; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-active { background: #dff6dd; color: #107c10; }
+        .badge-inactive, .badge-suspended { background: #fed9cc; color: #d13438; }
+        .badge-type { background: #fde8da; color: #F37021; }
+        .scrollable { max-height: 500px; overflow-y: auto; }
+        .empty { padding: 24px; text-align: center; color: #a19f9d; }
+        .search-box { padding: 12px 24px; border-bottom: 1px solid #edebe9; }
+        .search-box input { width: 100%; padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; }
+        .search-box input:focus { outline: none; border-color: #F37021; }
+        .flash { padding: 12px 24px; margin-bottom: 16px; border-radius: 8px; font-size: 14px; }
+        .flash-success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+        .flash-error { background: #fed9cc; color: #d13438; border: 1px solid #d13438; }
+        .form-section { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 24px; padding: 24px; }
+        .form-section h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #6D6E71; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group label { font-size: 13px; font-weight: 600; color: #6D6E71; }
+        .form-group input, .form-group select, .form-group textarea { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; font-family: inherit; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #F37021; }
+        .btn-create { background: #F37021; color: white; border: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .btn-create:hover { background: #d4601a; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" style="color: white; text-decoration: none; font-size: 14px; opacity: 0.8;">← Menu</a>
+        <h1>Fabric Tenant Overview</h1>
+    </header>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number">{{ capacities | length }}</div>
+                <div class="label">Capacities</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ workspaces | length }}</div>
+                <div class="label">Workspaces</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ domains | length + subdomains | length }}</div>
+                <div class="label">Domains & Subdomains</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ tags | length }}</div>
+                <div class="label">Tags</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ gateways | length }}</div>
+                <div class="label">Gateways</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ connections | length }}</div>
+                <div class="label">Connections</div>
+            </div>
+        </div>
+
+        <!-- Create Workspace -->
+        <div class="form-section">
+            <h2>Create Workspace</h2>
+            <form method="POST" action="/create-workspace">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Workspace Name *</label>
+                        <input type="text" id="name" name="name" required placeholder="My Workspace">
+                    </div>
+                    <div class="form-group">
+                        <label for="capacity_id">Capacity *</label>
+                        <select id="capacity_id" name="capacity_id" required>
+                            <option value="">Select a capacity...</option>
+                            {% for c in capacities %}
+                            <option value="{{ c.id }}">{{ c.displayName }} ({{ c.sku }} - {{ c.region }} - {{ c.state }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="domain_id">Domain *</label>
+                        <select id="domain_id" name="domain_id">
+                            <option value="">No domain</option>
+                            {% for d in domains %}
+                            <option value="{{ d.id }}">{{ d.displayName }}</option>
+                            {% endfor %}
+                            {% for s in subdomains %}
+                            <option value="{{ s.id }}">↳ {{ s.displayName }} ({{ s.parentName }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Description (optional)</label>
+                        <input type="text" id="description" name="description" placeholder="Workspace description">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>Tags *</label>
+                        <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                            <div>
+                                <div style="font-size: 11px; font-weight: 600; color: #107c10; margin-bottom: 4px;">Environment</div>
+                                {% for t in tags %}
+                                {% if t.displayName|lower in settings.environments|map('lower')|list %}
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; color: #323130; cursor: pointer;">
+                                    <input type="checkbox" name="tags" value="{{ t.id }}"> {{ t.displayName }}
+                                </label>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; font-weight: 600; color: #0078d4; margin-bottom: 4px;">Use Case</div>
+                                {% for t in tags %}
+                                {% if t.displayName|lower in settings.use_cases|map('lower')|list %}
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; color: #323130; cursor: pointer;">
+                                    <input type="checkbox" name="tags" value="{{ t.id }}"> {{ t.displayName }}
+                                </label>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; font-weight: 600; color: #6b3fa0; margin-bottom: 4px;">Branch</div>
+                                {% for t in tags %}
+                                {% if t.displayName|lower in settings.branches|map('lower')|list %}
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; color: #323130; cursor: pointer;">
+                                    <input type="checkbox" name="tags" value="{{ t.id }}"> {{ t.displayName }}
+                                </label>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="new-tag-name" placeholder="New tag name..." style="padding: 6px 10px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px; width: 180px;">
+                            <button type="button" onclick="createTag()" style="padding: 6px 14px; border: none; border-radius: 4px; background: #6D6E71; color: white; font-size: 12px; font-weight: 600; cursor: pointer;">+ Create Tag</button>
+                            <span id="tag-msg" style="font-size: 12px;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="la_subscription_id">Log Analytics - Subscription ID *</label>
+                        <input type="text" id="la_subscription_id" name="la_subscription_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label for="la_resource_group">Log Analytics - Resource Group *</label>
+                        <input type="text" id="la_resource_group" name="la_resource_group" placeholder="my-resource-group">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="la_workspace_name">Log Analytics - Workspace Name *</label>
+                        <input type="text" id="la_workspace_name" name="la_workspace_name" placeholder="my-log-analytics-workspace">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="admins">Admin *</label>
+                        <select id="admins" name="admins">
+                            <option value="">Select admin group...</option>
+                            <option value="dhub-dev-fabric-platform-admin">dhub-dev-fabric-platform-admin</option>
+                            <option value="dhub-crt-fabric-platform-admin">dhub-crt-fabric-platform-admin</option>
+                            <option value="dhub-prd-fabric-platform-reference-assets-ws-admin">dhub-prd-fabric-platform-reference-assets-ws-admin</option>
+                            <option value="dhub-prd-fabric-platform-pii-ws-admin">dhub-prd-fabric-platform-pii-ws-admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="contributors">Contributor *</label>
+                        <select id="contributors" name="contributors">
+                            <option value="">Select contributor group...</option>
+                            <option value="dhub-dev-fabric-uc-ws-contributor">dhub-dev-fabric-uc-ws-contributor</option>
+                            <option value="dhub-prd-fabric-uc-ws-contributor">dhub-prd-fabric-uc-ws-contributor</option>
+                            <option value="dhub-crt-fabric-uc-ws-contributor">dhub-crt-fabric-uc-ws-contributor</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="viewers">Viewer *</label>
+                        <select id="viewers" name="viewers">
+                            <option value="">Select viewer group...</option>
+                            <option value="dhub-prd-fabric-uc-ws-viewer">dhub-prd-fabric-uc-ws-viewer</option>
+                            <option value="dhub-dev-fabric-uc-ws-viewer">dhub-dev-fabric-uc-ws-viewer</option>
+                            <option value="dhub-crt-fabric-uc-ws-viewer">dhub-crt-fabric-uc-ws-viewer</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width" style="border-top: 2px solid #edebe9; padding-top: 16px; margin-top: 8px;">
+                        <label style="font-size: 15px; font-weight: 700; color: #F37021;">Workspace Initial Items</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="root_folder_name">Root Folder (optional)</label>
+                        <input type="text" id="root_folder_name" name="root_folder_name" placeholder="Leave empty for no root folder">
+                    </div>
+                    <div class="form-group">
+                        <label for="lakehouse_name">Lakehouse Name *</label>
+                        <input type="text" id="lakehouse_name" name="lakehouse_name" required placeholder="lh_brz_[project]_[type]_[name]">
+                    </div>
+                </div>
+                <p style="font-size: 12px; color: #6D6E71; margin-top: 8px; margin-bottom: 12px;">
+                    The following items will be created automatically:<br>
+                    📁 Notebook / 📓 nb_00_init &nbsp;&nbsp;|&nbsp;&nbsp; 📁 Pipeline / ⚙️ p_00_init &nbsp;&nbsp;|&nbsp;&nbsp; 🏠 Lakehouse (name above)
+                </p>
+
+                <!-- Git Integration -->
+                <div style="border-top: 2px solid #edebe9; padding-top: 16px; margin-top: 8px; margin-bottom: 16px;">
+                    <label style="font-size: 15px; font-weight: 700; color: #F37021;">Git Integration (optional)</label>
+                    <p style="font-size: 12px; color: #a19f9d; margin-top: 2px;">Connect workspace to GitHub to manage your code and back up your work.</p>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Git Provider</label>
+                        <div style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border: 2px solid #c8c6c4; border-radius: 6px; font-size: 13px; font-weight: 600; color: #323130;">
+                            GitHub
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="git_connection_id">GitHub Connection</label>
+                        <select id="git_connection_id" name="git_connection_id">
+                            <option value="">Select connection...</option>
+                            {% for gc in git_connections %}
+                            <option value="{{ gc.id }}">{{ gc.displayName }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="git_owner">Repository URL</label>
+                        <input type="text" id="git_repo_url" name="git_repo_url" placeholder="https://github.com/misantibanez/fb-test-gh">
+                    </div>
+                    <div class="form-group">
+                        <label for="git_branch">Branch</label>
+                        <input type="text" id="git_branch" name="git_branch" placeholder="main">
+                    </div>
+                    <div class="form-group">
+                        <label for="git_folder">Git Folder</label>
+                        <input type="text" id="git_folder" name="git_folder" placeholder="process">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-create">Create Workspace</button>
+            </form>
+        </div>
+
+        <!-- Capacities -->
+        <div class="section">
+            <div class="section-header"><h2>Capacities</h2></div>
+            <div class="search-box" style="display: flex; gap: 12px; align-items: center;">
+                <select id="cap-sku-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All SKUs</option>
+                    {% for sku in capacities | map(attribute='sku') | unique | sort %}
+                    <option value="{{ sku }}">{{ sku }}</option>
+                    {% endfor %}
+                </select>
+                <select id="cap-region-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All Regions</option>
+                    {% for region in capacities | map(attribute='region') | unique | sort %}
+                    <option value="{{ region }}">{{ region }}</option>
+                    {% endfor %}
+                </select>
+                <select id="cap-state-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All States</option>
+                    {% for state in capacities | map(attribute='state') | unique | sort %}
+                    <option value="{{ state }}">{{ state }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="scrollable">
+                <table id="cap-table">
+                    <thead><tr><th>Name</th><th>ID</th><th>SKU</th><th>Region</th><th>State</th></tr></thead>
+                    <tbody>
+                    {% for c in capacities %}
+                        <tr data-sku="{{ c.sku }}" data-region="{{ c.region }}" data-state="{{ c.state }}">
+                            <td>{{ c.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ c.id }}</td>
+                            <td><span class="badge badge-type">{{ c.sku }}</span></td>
+                            <td>{{ c.region }}</td>
+                            <td><span class="badge {{ 'badge-active' if c.state == 'Active' else 'badge-suspended' }}">{{ c.state }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Workspaces -->
+        <div class="section">
+            <div class="section-header"><h2>Workspaces</h2></div>
+            <div class="search-box" style="display: flex; gap: 12px; align-items: center;">
+                <input type="text" id="ws-search" placeholder="Search workspaces..." onkeyup="filterWorkspaces()" style="flex: 1;">
+                <select id="ws-type-filter" onchange="filterWorkspaces()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All types</option>
+                    <option value="Workspace" selected>Workspace</option>
+                    <option value="PersonalGroup">PersonalGroup</option>
+                    <option value="AdminWorkspace">AdminWorkspace</option>
+                </select>
+            </div>
+            <div class="scrollable">
+                <table id="ws-table">
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>State</th></tr></thead>
+                    <tbody>
+                    {% for w in workspaces %}
+                        <tr data-type="{{ w.type }}">
+                            <td>{{ w.displayName or w.name }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ w.id }}</td>
+                            <td><span class="badge badge-type">{{ w.type }}</span></td>
+                            <td><span class="badge {{ 'badge-active' if w.state == 'Active' else 'badge-inactive' }}">{{ w.state }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Domains & Subdomains -->
+        <div class="section">
+            <div class="section-header"><h2>Domains & Subdomains</h2></div>
+            <div class="scrollable">
+                {% if domains or subdomains %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Parent Domain</th><th>Description</th></tr></thead>
+                    <tbody>
+                    {% for d in domains %}
+                        <tr>
+                            <td><strong>{{ d.displayName }}</strong></td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ d.id }}</td>
+                            <td>—</td>
+                            <td>{{ d.description or '' }}</td>
+                        </tr>
+                        {% for s in subdomains if s.parentDomainId == d.id %}
+                        <tr>
+                            <td style="padding-left: 36px;">↳ {{ s.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ s.id }}</td>
+                            <td>{{ s.parentName }}</td>
+                            <td>{{ s.description or '' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No domains configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="section">
+            <div class="section-header"><h2>Tags</h2></div>
+            <div class="scrollable">
+                {% if tags %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Scope</th></tr></thead>
+                    <tbody>
+                    {% for t in tags %}
+                        <tr>
+                            <td>{{ t.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ t.id }}</td>
+                            <td><span class="badge badge-type">{{ t.scope.type }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No tags configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gateways -->
+        <div class="section">
+            <div class="section-header"><h2>Gateways</h2></div>
+            <div class="scrollable">
+                {% if gateways %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Details</th><th>Datasources</th></tr></thead>
+                    <tbody>
+                    {% for gw in gateways %}
+                        <tr>
+                            <td>{{ gw.displayName or '—' }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ gw.id }}</td>
+                            <td><span class="badge badge-type">{{ gw.type }}</span></td>
+                            <td>
+                                {% if gw.type == 'VirtualNetwork' %}
+                                    Capacity: {{ gw.capacityId or 'N/A' }}<br>
+                                    Inactivity: {{ gw.inactivityMinutesBeforeSleep or 'N/A' }} min
+                                    {% if gw.virtualNetworkAzureResource %}
+                                    <br>VNet: {{ gw.virtualNetworkAzureResource.virtualNetworkName }}/{{ gw.virtualNetworkAzureResource.subnetName }}
+                                    {% endif %}
+                                {% elif gw.type == 'OnPremises' %}
+                                    Version: {{ gw.version or 'N/A' }}<br>
+                                    Members: {{ gw.numberOfMemberGateways or 'N/A' }}
+                                {% else %}
+                                    Version: {{ gw.version or 'N/A' }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if gw.datasources %}
+                                    {% for ds in gw.datasources %}
+                                        {{ ds.datasourceName or 'Unnamed' }} ({{ ds.datasourceType }})<br>
+                                    {% endfor %}
+                                {% else %}
+                                    <span style="color: #a19f9d;">None</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No gateways found.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Connections -->
+        <div class="section">
+            <div class="section-header"><h2>Connections</h2></div>
+            <div class="scrollable">
+                {% if connections %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Connectivity</th><th>Credential</th><th>Privacy</th></tr></thead>
+                    <tbody>
+                    {% for conn in connections %}
+                        <tr>
+                            <td>{{ conn.displayName or '—' }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ conn.id }}</td>
+                            <td>{{ conn.connectionDetails.type if conn.connectionDetails else 'N/A' }}</td>
+                            <td><span class="badge badge-type">{{ conn.connectivityType }}</span></td>
+                            <td>{{ conn.credentialDetails.credentialType if conn.credentialDetails else 'N/A' }}</td>
+                            <td>{{ conn.privacyLevel or 'N/A' }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No connections found.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function filterTable(inputId, tableId) {
+            const filter = document.getElementById(inputId).value.toLowerCase();
+            const rows = document.getElementById(tableId).querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+            });
+        }
+
+        function filterWorkspaces() {
+            const text = document.getElementById('ws-search').value.toLowerCase();
+            const type = document.getElementById('ws-type-filter').value;
+            const rows = document.getElementById('ws-table').querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const matchesText = row.textContent.toLowerCase().includes(text);
+                const matchesType = type === 'all' || row.dataset.type === type;
+                row.style.display = (matchesText && matchesType) ? '' : 'none';
+            });
+        }
+
+        function filterCapacities() {
+            const sku = document.getElementById('cap-sku-filter').value;
+            const region = document.getElementById('cap-region-filter').value;
+            const state = document.getElementById('cap-state-filter').value;
+            const rows = document.getElementById('cap-table').querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const matchSku = sku === 'all' || row.dataset.sku === sku;
+                const matchRegion = region === 'all' || row.dataset.region === region;
+                const matchState = state === 'all' || row.dataset.state === state;
+                row.style.display = (matchSku && matchRegion && matchState) ? '' : 'none';
+            });
+        }
+
+        // Apply default filter on load
+        document.addEventListener('DOMContentLoaded', filterWorkspaces);
+
+        function createTag() {
+            const input = document.getElementById('new-tag-name');
+            const msg = document.getElementById('tag-msg');
+            const name = input.value.trim();
+            if (!name) { msg.textContent = 'Enter a tag name.'; msg.style.color = '#d13438'; return; }
+            msg.textContent = 'Creating...'; msg.style.color = '#6D6E71';
+            fetch('/create-tag', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({displayName: name})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { msg.textContent = data.error; msg.style.color = '#d13438'; }
+                else { msg.textContent = 'Created! Reloading...'; msg.style.color = '#107c10'; setTimeout(() => location.reload(), 500); }
+            })
+            .catch(() => { msg.textContent = 'Request failed.'; msg.style.color = '#d13438'; });
+        }
+    </script>
+</body>
+</html>

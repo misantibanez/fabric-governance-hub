@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fabric Management</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        .container { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+        .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .menu-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 32px; text-align: center; text-decoration: none; color: #323130; transition: box-shadow 0.2s, transform 0.2s; }
+        .menu-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.18); transform: translateY(-2px); }
+        .menu-card.disabled { opacity: 0.45; pointer-events: none; cursor: not-allowed; }
+        .menu-card .icon { font-size: 48px; margin-bottom: 16px; }
+        .menu-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+        .menu-card p { font-size: 13px; color: #6D6E71; }
+        .menu-card .badge-coming { display: inline-block; margin-top: 12px; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; background: #edebe9; color: #6D6E71; }
+        .menu-card.active { border: 2px solid #F37021; }
+        .menu-card.active h2 { color: #F37021; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Fabric Management</h1>
+    </header>
+    <div class="container">
+        <div class="menu-grid">
+            <a href="/create-workspace-form" class="menu-card active">
+                <div class="icon">🏗️</div>
+                <h2>Create Workspace</h2>
+                <p>Create a new Fabric workspace with capacity, domain, tags, Log Analytics, and role assignments.</p>
+            </a>
+            <a href="/modify-workspaces" class="menu-card active">
+                <div class="icon">✏️</div>
+                <h2>Modify Workspace</h2>
+                <p>Batch assign tags, domains, capacity, or delete existing workspaces.</p>
+            </a>
+            <a href="/workspace-map" class="menu-card active">
+                <div class="icon">🗺️</div>
+                <h2>Workspace Map</h2>
+                <p>Visual map of all workspaces grouped by domain and tags. Filter by domain, tag, or capacity.</p>
+            </a>
+            <div class="menu-card disabled">
+                <div class="icon">🔌</div>
+                <h2>Create Connection</h2>
+                <p>Create a new data connection in Fabric.</p>
+                <span class="badge-coming">Coming soon</span>
+            </div>
+            <div class="menu-card disabled">
+                <div class="icon">🔧</div>
+                <h2>Modify Connection</h2>
+                <p>Update settings of an existing connection.</p>
+                <span class="badge-coming">Coming soon</span>
+            </div>
+            <a href="/settings" class="menu-card active">
+                <div class="icon">⚙️</div>
+                <h2>Settings</h2>
+                <p>Configure tag groups (Environment, Use Case, Branch) used across the app.</p>
+            </a>
+        </div>
+    </div>
+</body>
+</html>

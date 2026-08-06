@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modify Workspaces</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .flash { padding: 12px 24px; margin-bottom: 16px; border-radius: 8px; font-size: 14px; }
+        .flash-success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+        .flash-error { background: #fed9cc; color: #d13438; border: 1px solid #d13438; }
+
+        .panel-layout { display: grid; grid-template-columns: 1fr 380px; gap: 24px; }
+
+        /* Workspace table */
+        .ws-panel { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); overflow: hidden; }
+        .ws-panel-header { padding: 16px 24px; border-bottom: 1px solid #edebe9; }
+        .ws-panel-header h2 { font-size: 18px; font-weight: 600; color: #6D6E71; margin-bottom: 12px; }
+        .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; }
+        .filter-bar input, .filter-bar select { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px; }
+        .filter-bar input { flex: 1; min-width: 200px; }
+        .filter-bar input:focus, .filter-bar select:focus { outline: none; border-color: #F37021; }
+        .ws-table-wrap { max-height: 600px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; text-align: left; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #6D6E71; border-bottom: 1px solid #edebe9; position: sticky; top: 0; z-index: 1; }
+        td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f3f2f1; }
+        tr:hover td { background: #fef5f0; }
+        tr.selected td { background: #fde8da; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .badge-type { background: #fde8da; color: #F37021; }
+        .badge-cap { background: #e0f0ff; color: #0078d4; }
+        .badge-tag { background: #e8dfec; color: #6b3fa0; margin-right: 4px; }
+        .ws-id { font-family: monospace; font-size: 11px; color: #6D6E71; }
+        .select-info { padding: 12px 24px; background: #faf9f8; border-top: 1px solid #edebe9; font-size: 13px; color: #6D6E71; }
+
+        /* Actions panel */
+        .actions-panel { display: flex; flex-direction: column; gap: 16px; }
+        .action-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 20px; }
+        .action-card h3 { font-size: 15px; font-weight: 600; color: #6D6E71; margin-bottom: 12px; }
+        .action-card label { font-size: 13px; font-weight: 600; color: #6D6E71; display: block; margin-bottom: 4px; }
+        .action-card select, .action-card input { width: 100%; padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+        .action-card select:focus, .action-card input:focus { outline: none; border-color: #F37021; }
+        .btn { border: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; width: 100%; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: #F37021; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #d4601a; }
+        .btn-danger { background: #d13438; color: white; }
+        .btn-danger:hover:not(:disabled) { background: #a4262c; }
+        .btn-secondary { background: #6D6E71; color: white; }
+        .btn-secondary:hover:not(:disabled) { background: #555658; }
+
+        .cb-all { margin-right: 4px; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Modify Workspaces</h1>
+    </header>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <div class="panel-layout">
+            <!-- Workspace list -->
+            <div class="ws-panel">
+                <div class="ws-panel-header">
+                    <h2>Workspaces ({{ workspaces | length }})</h2>
+                    <div class="filter-bar">
+                        <input type="text" id="ws-search" placeholder="Filter by name..." oninput="filterTable()">
+                        <select id="ws-type-filter" onchange="filterTable()">
+                            <option value="all">All types</option>
+                            <option value="Workspace" selected>Workspace</option>
+                            <option value="PersonalGroup">PersonalGroup</option>
+                        </select>
+                        <select id="ws-cap-filter" onchange="filterTable()">
+                            <option value="all">All capacities</option>
+                            {% for c in capacities %}
+                            <option value="{{ c.id }}">{{ c.displayName }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="ws-table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" class="cb-all" onclick="toggleAll(this)"></th>
+                                <th>Name</th>
+                                <th>Tags</th>
+                                <th>Domain</th>
+                                <th>Capacity</th>
+                                <th>Type</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ws-tbody">
+                        {% for ws in workspaces %}
+                            <tr data-id="{{ ws.id }}" data-name="{{ (ws.displayName or ws.name or '') | lower }}" data-type="{{ ws.type | default('Workspace') }}" data-cap="{{ ws.capacityId | default('') }}">
+                                <td><input type="checkbox" class="ws-cb" value="{{ ws.id }}" onchange="updateSelection()"></td>
+                                <td>{{ ws.displayName or ws.name }}</td>
+                                <td>
+                                    {% for tag in ws.tags | default([]) %}
+                                    <span class="badge badge-tag">{{ tag.displayName }}</span>
+                                    {% endfor %}
+                                </td>
+                                <td>{{ domain_map.get(ws.domainId, '') if ws.domainId else '' }}</td>
+                                <td>
+                                    {% for c in capacities %}
+                                        {% if c.id == ws.capacityId %}<span class="badge badge-cap">{{ c.displayName }}</span>{% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td><span class="badge badge-type">{{ ws.type | default('Workspace') }}</span></td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="select-info">
+                    Selected: <strong id="sel-count">0</strong> workspace(s)
+                </div>
+            </div>
+
+            <!-- Actions panel -->
+            <div class="actions-panel">
+                <!-- Apply Tags -->
+                <div class="action-card">
+                    <h3>Apply Tags</h3>
+                    <form method="POST" action="/modify-workspaces/apply-tags" onsubmit="return injectSelected(this)">
+                        <input type="hidden" name="workspace_ids" id="tags-ws-ids">
+                        <label>Select tags to apply</label>
+                        <select name="tag_ids" multiple style="min-height: 80px;">
+                            {% for t in tags %}
+                            <option value="{{ t.id }}">{{ t.displayName }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary" id="btn-tags" disabled>Apply Tags</button>
+                    </form>
+                </div>
+
+                <!-- Unapply Tags -->
+                <div class="action-card">
+                    <h3>Remove Tags</h3>
+                    <form method="POST" action="/modify-workspaces/unapply-tags" onsubmit="return injectSelected(this)">
+                        <input type="hidden" name="workspace_ids" id="untags-ws-ids">
+                        <label>Select tags to remove</label>
+                        <select name="tag_ids" multiple style="min-height: 80px;">
+                            {% for t in tags %}
+                            <option value="{{ t.id }}">{{ t.displayName }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-secondary" id="btn-untags" disabled>Remove Tags</button>
+                    </form>
+                </div>
+
+                <!-- Assign Domain -->
+                <div class="action-card">
+                    <h3>Assign Domain</h3>
+                    <form method="POST" action="/modify-workspaces/assign-domain" onsubmit="return injectSelected(this)">
+                        <input type="hidden" name="workspace_ids" id="domain-ws-ids">
+                        <label>Domain</label>
+                        <select name="domain_id" required>
+                            <option value="">Select a domain...</option>
+                            {% for d in domains %}
+                            <option value="{{ d.id }}">{{ d.displayName }}</option>
+                            {% endfor %}
+                            {% for s in subdomains %}
+                            <option value="{{ s.id }}">↳ {{ s.displayName }} ({{ s.parentName }})</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary" id="btn-domain" disabled>Assign Domain</button>
+                    </form>
+                </div>
+
+                <!-- Assign Capacity -->
+                <div class="action-card">
+                    <h3>Assign Capacity</h3>
+                    <form method="POST" action="/modify-workspaces/assign-capacity" onsubmit="return injectSelected(this)">
+                        <input type="hidden" name="workspace_ids" id="cap-ws-ids">
+                        <label>Capacity</label>
+                        <select name="capacity_id" required>
+                            <option value="">Select a capacity...</option>
+                            {% for c in capacities %}
+                            <option value="{{ c.id }}">{{ c.displayName }} ({{ c.sku | default('') }})</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary" id="btn-cap" disabled>Assign Capacity</button>
+                    </form>
+                </div>
+
+                <!-- Delete Workspaces -->
+                <div class="action-card">
+                    <h3>Delete Workspaces</h3>
+                    <form method="POST" action="/modify-workspaces/delete" onsubmit="return injectSelected(this) && confirm('Are you sure you want to delete the selected workspaces? This cannot be undone.')">
+                        <input type="hidden" name="workspace_ids" id="del-ws-ids">
+                        <button type="submit" class="btn btn-danger" id="btn-del" disabled>Delete Selected</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.ws-cb:checked')).map(cb => cb.value);
+    }
+
+    function updateSelection() {
+        const ids = getSelectedIds();
+        document.getElementById('sel-count').textContent = ids.length;
+        const disabled = ids.length === 0;
+        document.querySelectorAll('.actions-panel .btn').forEach(b => b.disabled = disabled);
+        // Highlight selected rows
+        document.querySelectorAll('#ws-tbody tr').forEach(tr => {
+            const cb = tr.querySelector('.ws-cb');
+            tr.classList.toggle('selected', cb && cb.checked);
+        });
+    }
+
+    function toggleAll(master) {
+        const visible = document.querySelectorAll('#ws-tbody tr:not([style*="display: none"]) .ws-cb');
+        visible.forEach(cb => cb.checked = master.checked);
+        updateSelection();
+    }
+
+    function injectSelected(form) {
+        const ids = getSelectedIds();
+        if (ids.length === 0) { alert('Select at least one workspace.'); return false; }
+        const hidden = form.querySelector('input[name="workspace_ids"]');
+        hidden.value = JSON.stringify(ids);
+        return true;
+    }
+
+    function filterTable() {
+        const search = document.getElementById('ws-search').value.toLowerCase();
+        const typeFilter = document.getElementById('ws-type-filter').value;
+        const capFilter = document.getElementById('ws-cap-filter').value;
+        document.querySelectorAll('#ws-tbody tr').forEach(tr => {
+            const name = tr.dataset.name;
+            const type = tr.dataset.type;
+            const cap = tr.dataset.cap;
+            const matchName = !search || name.includes(search);
+            const matchType = typeFilter === 'all' || type === typeFilter;
+            const matchCap = capFilter === 'all' || cap === capFilter;
+            tr.style.display = (matchName && matchType && matchCap) ? '' : 'none';
+        });
+    }
+
+    // Apply default filter on load
+    filterTable();
+    </script>
+</body>
+</html>
