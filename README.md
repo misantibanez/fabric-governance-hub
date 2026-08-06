@@ -131,4 +131,4 @@ This is an internal tool built to accelerate Fabric workspace management. PRs an
 
 ## License
 
-Internal use only.
+This project is licensed under the [MIT License](LICENSE).
