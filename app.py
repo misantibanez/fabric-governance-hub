@@ -198,6 +198,38 @@ def fetch_gateway_datasources(pbi_headers, gateway_id):
     return []
 
 
+def fetch_gateways_pbi(pbi_headers):
+    resp = requests.get(
+        "https://api.powerbi.com/v2.0/myorg/gatewayclusters", headers=pbi_headers
+    )
+    if resp.status_code in (401, 403):
+        return []
+    if resp.status_code != 200:
+        return []
+    gateways = resp.json().get("value", [])
+    for gw in gateways:
+        members = gw.get("memberGateways", []) or []
+        contact_info = ""
+        for m in members:
+            annotation_str = m.get("annotation", "")
+            if annotation_str and not contact_info:
+                try:
+                    ann = json.loads(annotation_str)
+                    contacts = ann.get("gatewayContactInformation", [])
+                    contact_info = "; ".join(contacts) if isinstance(contacts, list) else str(contacts)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        gw["contactInfo"] = contact_info
+        perms = gw.get("permissions", []) or []
+        user_names = []
+        for p in perms:
+            name = p.get("principalName", "") or p.get("displayName", "") or p.get("id", "")
+            role = p.get("role", "")
+            user_names.append(f"{name} ({role})" if role else name)
+        gw["users"] = "; ".join(user_names)
+    return gateways
+
+
 def fetch_connections(headers):
     url = "https://api.fabric.microsoft.com/v1/connections"
     connections = []
@@ -267,6 +299,14 @@ def tenant_overview():
 
     for gw in gateways:
         gw["datasources"] = fetch_gateway_datasources(pbi_headers, gw["id"])
+
+    # Enrich gateways with contact info and users from PBI v2 API
+    pbi_gateways = fetch_gateways_pbi(pbi_headers)
+    pbi_gw_map = {g["id"]: g for g in pbi_gateways}
+    for gw in gateways:
+        pbi_gw = pbi_gw_map.get(gw["id"], {})
+        gw["contactInfo"] = pbi_gw.get("contactInfo", "")
+        gw["users"] = pbi_gw.get("users", "")
 
     domain_map = {d["id"]: d["displayName"] for d in domains_raw}
     for d in domains_raw:
