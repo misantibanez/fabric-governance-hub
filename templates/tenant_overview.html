@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tenant Overview</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); text-align: center; }
+        .stat-card .number { font-size: 36px; font-weight: 700; color: #F37021; }
+        .stat-card .label { font-size: 14px; color: #6D6E71; margin-top: 4px; }
+        .section { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 24px; overflow: hidden; }
+        .section-header { padding: 16px 24px; border-bottom: 1px solid #edebe9; display: flex; align-items: center; gap: 10px; }
+        .section-header h2 { font-size: 18px; font-weight: 600; color: #6D6E71; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; text-align: left; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #6D6E71; border-bottom: 1px solid #edebe9; position: sticky; top: 0; }
+        td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f3f2f1; }
+        tr:hover td { background: #fef5f0; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-active { background: #dff6dd; color: #107c10; }
+        .badge-inactive, .badge-suspended { background: #fed9cc; color: #d13438; }
+        .badge-type { background: #fde8da; color: #F37021; }
+        .scrollable { max-height: 500px; overflow-y: auto; }
+        .empty { padding: 24px; text-align: center; color: #a19f9d; }
+        .search-box { padding: 12px 24px; border-bottom: 1px solid #edebe9; }
+        .search-box input { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; }
+        .search-box input:focus { outline: none; border-color: #F37021; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Tenant Overview</h1>
+    </header>
+    <div class="container">
+        <div class="stats">
+            <div class="stat-card">
+                <div class="number">{{ capacities | length }}</div>
+                <div class="label">Capacities</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ workspaces | length }}</div>
+                <div class="label">Workspaces</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ domains | length + subdomains | length }}</div>
+                <div class="label">Domains & Subdomains</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ tags | length }}</div>
+                <div class="label">Tags</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ gateways | length }}</div>
+                <div class="label">Gateways</div>
+            </div>
+            <div class="stat-card">
+                <div class="number">{{ connections | length }}</div>
+                <div class="label">Connections</div>
+            </div>
+        </div>
+
+        <!-- Capacities -->
+        <div class="section">
+            <div class="section-header"><h2>Capacities</h2></div>
+            <div class="search-box" style="display: flex; gap: 12px; align-items: center;">
+                <select id="cap-sku-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All SKUs</option>
+                    {% for sku in capacities | map(attribute='sku') | unique | sort %}
+                    <option value="{{ sku }}">{{ sku }}</option>
+                    {% endfor %}
+                </select>
+                <select id="cap-region-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All Regions</option>
+                    {% for region in capacities | map(attribute='region') | unique | sort %}
+                    <option value="{{ region }}">{{ region }}</option>
+                    {% endfor %}
+                </select>
+                <select id="cap-state-filter" onchange="filterCapacities()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All States</option>
+                    {% for state in capacities | map(attribute='state') | unique | sort %}
+                    <option value="{{ state }}">{{ state }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="scrollable">
+                <table id="cap-table">
+                    <thead><tr><th>Name</th><th>ID</th><th>SKU</th><th>Region</th><th>State</th></tr></thead>
+                    <tbody>
+                    {% for c in capacities %}
+                        <tr data-sku="{{ c.sku }}" data-region="{{ c.region }}" data-state="{{ c.state }}">
+                            <td>{{ c.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ c.id }}</td>
+                            <td><span class="badge badge-type">{{ c.sku }}</span></td>
+                            <td>{{ c.region }}</td>
+                            <td><span class="badge {{ 'badge-active' if c.state == 'Active' else 'badge-suspended' }}">{{ c.state }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Workspaces -->
+        <div class="section">
+            <div class="section-header" style="justify-content: space-between;">
+                <h2>Workspaces <span id="ws-count" style="font-size: 13px; font-weight: 400; color: #a19f9d;"></span></h2>
+                <button onclick="exportWorkspaces()" style="padding: 6px 14px; border: none; border-radius: 4px; background: #F37021; color: white; font-size: 12px; font-weight: 600; cursor: pointer;">Export CSV</button>
+            </div>
+            <div class="search-box" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="ws-search" placeholder="Search workspaces..." onkeyup="filterWorkspaces()" style="flex: 1; min-width: 150px;">
+                <select id="ws-type-filter" onchange="filterWorkspaces()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All types</option>
+                    <option value="Workspace" selected>Workspace</option>
+                    <option value="PersonalGroup">PersonalGroup</option>
+                    <option value="AdminWorkspace">AdminWorkspace</option>
+                </select>
+                <select id="ws-domain-filter" onchange="filterWorkspaces()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All Domains</option>
+                    {% for d in domains %}
+                    <option value="{{ d.id }}">{{ d.displayName }}</option>
+                    {% endfor %}
+                    {% for s in subdomains %}
+                    <option value="{{ s.id }}">↳ {{ s.displayName }}</option>
+                    {% endfor %}
+                    <option value="none">No Domain</option>
+                </select>
+                <select id="ws-tag-filter" onchange="filterWorkspaces()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px;">
+                    <option value="all">All Tags</option>
+                    {% for t in tags %}
+                    <option value="{{ t.id }}">{{ t.displayName }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="scrollable">
+                <table id="ws-table">
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>State</th><th>Domain</th><th>Tags</th></tr></thead>
+                    <tbody>
+                    {% for w in workspaces %}
+                        <tr data-type="{{ w.type }}" data-domain="{{ w.domainId or '' }}" data-tags="{{ w.tags | map(attribute='id') | join(',') if w.tags else '' }}">
+                            <td>{{ w.displayName or w.name }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ w.id }}</td>
+                            <td><span class="badge badge-type">{{ w.type }}</span></td>
+                            <td><span class="badge {{ 'badge-active' if w.state == 'Active' else 'badge-inactive' }}">{{ w.state }}</span></td>
+                            <td>{{ domain_map.get(w.domainId, '—') if w.domainId else '—' }}</td>
+                            <td>{% for tag in w.tags or [] %}<span class="badge badge-type">{{ tag.displayName }}</span> {% endfor %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Domains & Subdomains -->
+        <div class="section">
+            <div class="section-header"><h2>Domains & Subdomains</h2></div>
+            <div class="scrollable">
+                {% if domains or subdomains %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Parent Domain</th><th>Description</th></tr></thead>
+                    <tbody>
+                    {% for d in domains %}
+                        <tr>
+                            <td><strong>{{ d.displayName }}</strong></td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ d.id }}</td>
+                            <td>—</td>
+                            <td>{{ d.description or '' }}</td>
+                        </tr>
+                        {% for s in subdomains if s.parentDomainId == d.id %}
+                        <tr>
+                            <td style="padding-left: 36px;">↳ {{ s.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ s.id }}</td>
+                            <td>{{ s.parentName }}</td>
+                            <td>{{ s.description or '' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No domains configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="section">
+            <div class="section-header"><h2>Tags</h2></div>
+            <div class="scrollable">
+                {% if tags %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Scope</th></tr></thead>
+                    <tbody>
+                    {% for t in tags %}
+                        <tr>
+                            <td>{{ t.displayName }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ t.id }}</td>
+                            <td><span class="badge badge-type">{{ t.scope.type }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No tags configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Gateways -->
+        <div class="section">
+            <div class="section-header" style="justify-content: space-between;">
+                <h2>Gateways <span style="font-size: 13px; font-weight: 400; color: #a19f9d;">({{ gateways | length }})</span></h2>
+                <button onclick="exportGateways()" style="padding: 6px 14px; border: none; border-radius: 4px; background: #F37021; color: white; font-size: 12px; font-weight: 600; cursor: pointer;">Export CSV</button>
+            </div>
+            <div class="scrollable">
+                {% if gateways %}
+                <table id="gw-table">
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Details</th><th>Datasources</th></tr></thead>
+                    <tbody>
+                    {% for gw in gateways %}
+                        <tr>
+                            <td>{{ gw.displayName or '—' }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ gw.id }}</td>
+                            <td><span class="badge badge-type">{{ gw.type }}</span></td>
+                            <td>
+                                {% if gw.type == 'VirtualNetwork' %}
+                                    Capacity: {{ gw.capacityId or 'N/A' }}<br>
+                                    Inactivity: {{ gw.inactivityMinutesBeforeSleep or 'N/A' }} min
+                                    {% if gw.virtualNetworkAzureResource %}
+                                    <br>VNet: {{ gw.virtualNetworkAzureResource.virtualNetworkName }}/{{ gw.virtualNetworkAzureResource.subnetName }}
+                                    {% endif %}
+                                {% elif gw.type == 'OnPremises' %}
+                                    Version: {{ gw.version or 'N/A' }}<br>
+                                    Members: {{ gw.numberOfMemberGateways or 'N/A' }}
+                                {% else %}
+                                    Version: {{ gw.version or 'N/A' }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if gw.datasources %}
+                                    {% for ds in gw.datasources %}
+                                        {{ ds.datasourceName or 'Unnamed' }} ({{ ds.datasourceType }})<br>
+                                    {% endfor %}
+                                {% else %}
+                                    <span style="color: #a19f9d;">None</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No gateways found.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Connections -->
+        <div class="section">
+            <div class="section-header"><h2>Connections</h2></div>
+            <div class="scrollable">
+                {% if connections %}
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Connectivity</th><th>Credential</th><th>Privacy</th></tr></thead>
+                    <tbody>
+                    {% for conn in connections %}
+                        <tr>
+                            <td>{{ conn.displayName or '—' }}</td>
+                            <td style="font-family: monospace; font-size: 12px;">{{ conn.id }}</td>
+                            <td>{{ conn.connectionDetails.type if conn.connectionDetails else 'N/A' }}</td>
+                            <td><span class="badge badge-type">{{ conn.connectivityType }}</span></td>
+                            <td>{{ conn.credentialDetails.credentialType if conn.credentialDetails else 'N/A' }}</td>
+                            <td>{{ conn.privacyLevel or 'N/A' }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No connections found.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function filterWorkspaces() {
+            const text = document.getElementById('ws-search').value.toLowerCase();
+            const type = document.getElementById('ws-type-filter').value;
+            const domain = document.getElementById('ws-domain-filter').value;
+            const tag = document.getElementById('ws-tag-filter').value;
+            const rows = document.getElementById('ws-table').querySelectorAll('tbody tr');
+            let visible = 0;
+            rows.forEach(row => {
+                const matchesText = row.textContent.toLowerCase().includes(text);
+                const matchesType = type === 'all' || row.dataset.type === type;
+                const matchesDomain = domain === 'all' || (domain === 'none' ? !row.dataset.domain : row.dataset.domain === domain);
+                const matchesTag = tag === 'all' || (row.dataset.tags || '').split(',').includes(tag);
+                const show = matchesText && matchesType && matchesDomain && matchesTag;
+                row.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+            document.getElementById('ws-count').textContent = `(${visible} of ${rows.length})`;
+        }
+
+        function filterCapacities() {
+            const sku = document.getElementById('cap-sku-filter').value;
+            const region = document.getElementById('cap-region-filter').value;
+            const state = document.getElementById('cap-state-filter').value;
+            const rows = document.getElementById('cap-table').querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const matchSku = sku === 'all' || row.dataset.sku === sku;
+                const matchRegion = region === 'all' || row.dataset.region === region;
+                const matchState = state === 'all' || row.dataset.state === state;
+                row.style.display = (matchSku && matchRegion && matchState) ? '' : 'none';
+            });
+        }
+
+        function exportWorkspaces() {
+            const rows = document.getElementById('ws-table').querySelectorAll('tbody tr');
+            let csv = 'Name,ID,Type,State,Domain,Tags\n';
+            rows.forEach(row => {
+                if (row.style.display === 'none') return;
+                const cells = row.querySelectorAll('td');
+                const line = Array.from(cells).map(c => '"' + c.textContent.trim().replace(/"/g, '""') + '"').join(',');
+                csv += line + '\n';
+            });
+            downloadCSV(csv, 'workspaces.csv');
+        }
+
+        function exportGateways() {
+            const rows = document.querySelectorAll('#gw-table tbody tr');
+            let csv = 'Name,ID,Type,Details,Datasources\n';
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                const line = Array.from(cells).map(c => '"' + c.textContent.trim().replace(/"/g, '""') + '"').join(',');
+                csv += line + '\n';
+            });
+            downloadCSV(csv, 'gateways.csv');
+        }
+
+        function downloadCSV(csv, filename) {
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+
+        document.addEventListener('DOMContentLoaded', filterWorkspaces);
+    </script>
+</body>
+</html>

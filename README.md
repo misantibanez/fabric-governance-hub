@@ -53,15 +53,18 @@ Capacities, workspaces, domains, subdomains, tags, gateways, connections — all
 | Feature | Description |
 |---------|-------------|
 | **Workspace Provisioning** | Create workspaces with capacity, domain, tags, roles, and initial items in a single step |
+| **Workspace Identity** | Automatically provisions a managed identity for each new workspace |
+| **Managed Private Endpoints** | Creates Key Vault and Cognitive Services MPEs for secure outbound connectivity |
 | **Initial Items** | Auto-create folder structure (Notebook, Pipeline), notebooks (`nb_00_init`), pipelines (`p_00_init`), and Lakehouse |
 | **Nested Root Folders** | Support for nested folder paths like `Project/SubProject/` |
-| **Tag Management** | Create tags on the fly, apply/remove in batch, organized by Environment / Use Case / Branch |
+| **Tag Management** | Create tags on the fly, apply/remove in batch; Use Case tags loaded dynamically from domain |
 | **Domain Assignment** | Assign workspaces to domains and subdomains individually or in bulk |
 | **Log Analytics** | Configure Azure Log Analytics workspace integration via Power BI admin API |
 | **Role Assignments** | Pre-defined Entra ID security groups per role (Admin, Contributor, Viewer) |
-| **Git Integration** | Connect workspaces to GitHub repositories with branch and folder configuration |
+| **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
 | **Workspace Map** | Visual governance dashboard with domain grouping and PII/Reference Assets classification |
-| **Dual Token Auth** | Automatic handling of both Fabric and Power BI API tokens |
+| **Tenant Overview** | Dashboard with KPIs, filters, and CSV export for workspaces and gateways |
+| **Dual Token Auth** | Automatic handling of Fabric, Power BI, and GitHub API tokens |
 | **Batch Operations** | Apply tags, remove tags, assign domain, assign capacity, delete — across multiple workspaces |
 
 ---
@@ -86,7 +89,11 @@ pip install flask python-dotenv azure-identity requests
 Create a `.env` file:
 ```env
 FABRIC_TENANT_ID=your-tenant-id
+GITHUB_PAT=your-github-personal-access-token
 ```
+
+- `FABRIC_TENANT_ID` — Your Microsoft Entra tenant ID
+- `GITHUB_PAT` — GitHub Personal Access Token with `repo` scope (used to create git folders)
 
 ### Run
 
@@ -106,10 +113,12 @@ Then open **http://127.0.0.1:5000** in your browser.
 
 ```
 app.py                        ← Flask app (all routes and API logic)
-settings.json                 ← Tag group configuration (auto-generated)
+settings.json                 ← Configuration (auto-generated)
+.env                          ← Secrets (tenant ID, GitHub PAT)
 templates/
   ├── menu.html               ← Main menu
-  ├── index.html              ← Create Workspace + Tenant Overview
+  ├── index.html              ← Create Workspace form
+  ├── tenant_overview.html    ← Tenant Overview dashboard
   ├── modify_workspaces.html  ← Batch workspace operations
   ├── workspace_map.html      ← Visual workspace map
   └── settings.html           ← Settings page
@@ -122,6 +131,8 @@ The app consumes two sets of APIs with separate authentication tokens:
 |-----|----------|-------------|
 | **Fabric** | `api.fabric.microsoft.com` | `https://api.fabric.microsoft.com/.default` |
 | **Power BI** | `api.powerbi.com` | `https://analysis.windows.net/powerbi/api/.default` |
+| **Microsoft Graph** | `graph.microsoft.com` | `https://graph.microsoft.com/.default` |
+| **GitHub** | `api.github.com` | Personal Access Token |
 
 ---
 
