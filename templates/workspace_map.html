@@ -77,16 +77,17 @@
         <div class="filter-bar">
             <div class="filter-group">
                 <label>Domain</label>
-                <select id="domain-filter" onchange="applyFilters()">
-                    <option value="all">All Domains</option>
+                <div id="domain-chips" style="display: flex; flex-direction: column; gap: 6px;">
                     {% for d in domains %}
-                    <option value="{{ d.id }}">{{ d.displayName }}</option>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+                        <button type="button" class="chip chip-env" data-id="{{ d.id }}" onclick="toggleDomain(this)" style="font-weight: 700;">{{ d.displayName }}</button>
+                        {% for s in subdomains if s.parentDomainId == d.id %}
+                        <button type="button" class="chip chip-env" data-id="{{ s.id }}" onclick="toggleDomain(this)" style="font-size: 11px;">↳ {{ s.displayName }}</button>
+                        {% endfor %}
+                    </div>
                     {% endfor %}
-                    {% for s in subdomains %}
-                    <option value="{{ s.id }}">↳ {{ s.displayName }}</option>
-                    {% endfor %}
-                    <option value="none">No Domain</option>
-                </select>
+                    <div><button type="button" class="chip chip-env" data-id="none" onclick="toggleDomain(this)">No Domain</button></div>
+                </div>
             </div>
             <div class="filter-group">
                 <label>Environment</label>
@@ -175,15 +176,15 @@
     }
 
     function applyFilters() {
-        const domainVal = document.getElementById('domain-filter').value;
-        const tagVals = Array.from(document.querySelectorAll('.chip.active')).map(c => c.dataset.id);
+        const domainVals = Array.from(document.querySelectorAll('#domain-chips .chip.active')).map(c => c.dataset.id);
+        const tagVals = Array.from(document.querySelectorAll('.tag-chips:not(#domain-chips) .chip.active')).map(c => c.dataset.id);
         const capVal = document.getElementById('cap-filter').value;
 
         let filtered = workspaces.filter(ws => {
             if (ws.type && ws.type !== 'Workspace') return false;
-            if (domainVal !== 'all') {
-                if (domainVal === 'none') { if (ws.domainId) return false; }
-                else { if (ws.domainId !== domainVal) return false; }
+            if (domainVals.length > 0) {
+                const wsDomain = ws.domainId || 'none';
+                if (!domainVals.includes(wsDomain)) return false;
             }
             if (tagVals.length > 0) {
                 const wsTags = (ws.tags || []).map(t => t.id);
@@ -280,6 +281,11 @@
     }
 
     function toggleChip(el) {
+        el.classList.toggle('active');
+        applyFilters();
+    }
+
+    function toggleDomain(el) {
         el.classList.toggle('active');
         applyFilters();
     }
