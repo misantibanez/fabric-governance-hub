@@ -924,7 +924,7 @@ def developer_workspaces():
             headers=fabric_headers,
         )
         if resp_git.status_code == 200:
-            git_details = resp_git.json().get("gitProviderDetails", {})
+            git_details = resp_git.json().get("gitProviderDetails") or {}
             ws["git_owner"] = git_details.get("ownerName", "")
             ws["git_repo"] = git_details.get("repositoryName", "")
             ws["git_folder"] = git_details.get("directoryName", "")
@@ -982,6 +982,15 @@ def create_developer_workspaces():
     )
     role_assignments = resp_roles.json().get("value", []) if resp_roles.status_code == 200 else []
 
+    # Get main workspace Log Analytics config
+    log_analytics_config = None
+    resp_la = requests.get(
+        f"https://api.powerbi.com/v1.0/myorg/admin/groups/{main_ws_id}",
+        headers=pbi_headers,
+    )
+    if resp_la.status_code == 200:
+        log_analytics_config = resp_la.json().get("logAnalyticsWorkspace")
+
     # Swap Main tag for feature
     feature_tag_ids = []
     for t in main_tags:
@@ -998,6 +1007,9 @@ def create_developer_workspaces():
 
     github_pat = os.environ.get("GITHUB_PAT", "")
     all_results = []
+    log = []
+    print(f"[DEV-WS] Starting creation for {dev_count} developer(s) from workspace '{main_name}'")
+    log.append(f"Starting creation for {dev_count} developer(s) from workspace '{main_name}'")
 
     for i in range(1, dev_count + 1):
         alias = request.form.get(f"dev_alias_{i}", "").strip()
@@ -1008,9 +1020,13 @@ def create_developer_workspaces():
 
         dev_errors = []
         branch_name = f"feature/{alias}"
-        ws_name = main_name.replace("main", alias).replace("Main", alias) if "main" in main_name.lower() else f"{main_name}-{alias}"
+        ws_name = f"{main_name}-{alias}"
+        print(f"[DEV-WS] [{alias}] Starting...")
+        log.append(f"\n[{alias}] Starting...")
 
         # 1. Create GitHub branch feature/{alias} from main
+        print(f"[DEV-WS] [{alias}] Step 1: Creating GitHub branch '{branch_name}'")
+        log.append(f"[{alias}] Step 1: Creating GitHub branch '{branch_name}'")
         if git_owner and git_repo and github_pat:
             # Get main branch SHA
             resp_ref = requests.get(
@@ -1037,6 +1053,8 @@ def create_developer_workspaces():
 
         # 2. Create Fabric GitHub connection for developer
         conn_name = f"cx-gh-{alias}"
+        print(f"[DEV-WS] [{alias}] Step 2: Creating Fabric connection")
+        log.append(f"[{alias}] Step 2: Creating Fabric connection '{conn_name}'")
         dev_conn_id = None
         # Check if connection already exists
         connections = fetch_connections(fabric_headers)
@@ -1068,6 +1086,8 @@ def create_developer_workspaces():
                 dev_errors.append(f"Fabric connection: {resp_conn.status_code} - {resp_conn.text[:150]}")
 
         # 3. Create workspace
+        print(f"[DEV-WS] [{alias}] Step 3: Creating workspace '{ws_name}'")
+        log.append(f"[{alias}] Step 3: Creating workspace '{ws_name}'")
         resp_ws = requests.post(
             "https://api.fabric.microsoft.com/v1/workspaces",
             headers={**fabric_headers, "Content-Type": "application/json"},
@@ -1075,6 +1095,7 @@ def create_developer_workspaces():
         )
         if resp_ws.status_code not in (200, 201):
             dev_errors.append(f"Workspace: {resp_ws.status_code} - {resp_ws.text[:150]}")
+            log.append(f"[{alias}] ERROR: Failed to create workspace")
             all_results.append({"alias": alias, "errors": dev_errors})
             continue
         dev_ws_id = resp_ws.json()["id"]
@@ -1130,7 +1151,17 @@ def create_developer_workspaces():
                 "targetSubresourceType": "vault", "requestMessage": f"Fabric {ws_name}",
             })
 
+        # 3g. Configure Log Analytics (same as main)
+        if log_analytics_config:
+            requests.patch(
+                f"https://api.powerbi.com/v1.0/myorg/admin/groups/{dev_ws_id}",
+                headers={**pbi_headers, "Content-Type": "application/json"},
+                json={"logAnalyticsWorkspace": log_analytics_config},
+            )
+
         # 4. Git integration
+        print(f"[DEV-WS] [{alias}] Step 4: Git integration")
+        log.append(f"[{alias}] Step 4: Git integration")
         if dev_conn_id and git_owner and git_repo:
             # Create .gitkeep in folder for the feature branch
             if git_folder and git_folder != "/" and github_pat:
@@ -1169,18 +1200,19 @@ def create_developer_workspaces():
             elif resp_git_conn.status_code != 200:
                 dev_errors.append(f"Git connect: {resp_git_conn.status_code} - {resp_git_conn.text[:150]}")
 
+        print(f"[DEV-WS] [{alias}] Done. Errors: {dev_errors if dev_errors else 'None'}")
+        if dev_errors:
+            log.append(f"[{alias}] ERROR: {'; '.join(dev_errors)}")
+        else:
+            log.append(f"[{alias}] ✓ Workspace '{ws_name}' created successfully")
         all_results.append({"alias": alias, "workspace": ws_name, "errors": dev_errors})
 
-    # Flash results
-    successes = [r for r in all_results if not r.get("errors")]
-    failures = [r for r in all_results if r.get("errors")]
-    if successes:
-        flash(f"Created {len(successes)} developer workspace(s): {', '.join(r['workspace'] for r in successes)}", "success")
-    if failures:
-        for f_item in failures:
-            flash(f"Errors for {f_item['alias']}: {'; '.join(f_item['errors'])}", "error")
-
-    return redirect(url_for("developer_workspaces"))
+    # Return JSON response for UI
+    from flask import jsonify
+    errors_flat = []
+    for r in all_results:
+        errors_flat.extend(r.get("errors", []))
+    return jsonify({"log": log, "errors": errors_flat, "results": all_results})
 
 
 @app.route("/workspace-compliance")

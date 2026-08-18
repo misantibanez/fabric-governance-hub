@@ -65,9 +65,11 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Log Analytics** | Configure Azure Log Analytics workspace integration via Power BI admin API |
 | **Role Assignments** | Pre-defined Entra ID security groups per role (Admin, Contributor, Viewer) |
 | **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
+| **Developer Workspaces** | Create feature workspaces for developers from a Main template with individual GitHub branches and connections |
+| **Workspace Compliance** | Check compliance for Git, Identity, MPE, Log Analytics, and Domain — with filters and CSV export |
 | **Workspace Map** | Visual governance dashboard with domain grouping and PII/Reference Assets classification |
 | **Tenant Overview** | Dashboard with KPIs, filters, and CSV export for workspaces and gateways |
-| **Dual Token Auth** | Automatic handling of Fabric, Power BI, and GitHub API tokens |
+| **Dual Token Auth** | Automatic handling of Fabric, Power BI, Graph, and GitHub API tokens |
 | **Batch Operations** | Apply tags, remove tags, assign domain, assign capacity, delete — across multiple workspaces |
 
 ---
@@ -121,6 +123,7 @@ settings.json                 ← Configuration (auto-generated)
 templates/
   ├── menu.html               ← Main menu
   ├── index.html              ← Create Workspace form
+  ├── developer_workspaces.html ← Developer workspace provisioning
   ├── tenant_overview.html    ← Tenant Overview dashboard
   ├── workspace_compliance.html ← Compliance checks
   ├── modify_workspaces.html  ← Batch workspace operations

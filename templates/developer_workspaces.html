@@ -112,6 +112,11 @@
                 <button type="button" class="btn btn-add" onclick="addDevRow()">+ Add Developer</button>
             </div>
 
+            <div class="card" id="progress-card" style="display: none;">
+                <h2>Progress</h2>
+                <div id="progress-log" style="font-family: 'Consolas', monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 16px; max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></div>
+            </div>
+
             <div class="card">
                 <h2>3. Summary</h2>
                 <p>The following will be created for each developer:</p>
@@ -123,7 +128,8 @@
                     <li>Git integration with developer's branch and connection</li>
                 </ul>
                 <br>
-                <button type="submit" class="btn btn-create">Create Developer Workspaces</button>
+                <input type="hidden" name="dev_count" id="dev-count" value="0">
+                <button type="button" class="btn btn-create" onclick="submitDevWorkspaces()">Create Developer Workspaces</button>
             </div>
         </form>
     </div>
@@ -132,6 +138,38 @@
     const capacityMap = {{ capacity_map_json | safe }};
     const domainMap = {{ domain_map_json | safe }};
     let devCount = 0;
+
+    function submitDevWorkspaces() {
+        const form = document.querySelector('form');
+        const progressCard = document.getElementById('progress-card');
+        const progressLog = document.getElementById('progress-log');
+        progressCard.style.display = 'block';
+        progressLog.textContent = '⏳ Starting...\n';
+        progressCard.scrollIntoView({ behavior: 'smooth' });
+
+        const formData = new FormData(form);
+        fetch('/create-developer-workspaces', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                progressLog.textContent = '';
+                for (const line of data.log) {
+                    const span = document.createElement('span');
+                    span.textContent = line + '\n';
+                    if (line.includes('ERROR')) span.style.color = '#f48771';
+                    else if (line.includes('✓')) span.style.color = '#89d185';
+                    else if (line.includes('Starting')) span.style.color = '#569cd6';
+                    progressLog.appendChild(span);
+                }
+                if (data.errors.length === 0) {
+                    progressLog.innerHTML += '\n<span style="color: #89d185; font-weight: bold;">✅ All done!</span>\n';
+                } else {
+                    progressLog.innerHTML += '\n<span style="color: #f48771; font-weight: bold;">⚠️ Completed with errors</span>\n';
+                }
+            })
+            .catch(err => {
+                progressLog.textContent += 'ERROR: Request failed - ' + err.message + '\n';
+            });
+    }
 
     function loadWorkspaceInfo(wsId) {
         const info = document.getElementById('ws-info');
@@ -164,6 +202,5 @@
     // Add first row by default
     document.addEventListener('DOMContentLoaded', addDevRow);
     </script>
-    <input type="hidden" name="dev_count" id="dev-count" value="0">
 </body>
 </html>
