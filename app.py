@@ -19,6 +19,7 @@ DEFAULT_SETTINGS = {
     "branches": ["feature", "main"],
     "mpe_cognitive_services_resource_id": "",
     "mpe_keyvault_resource_id": "",
+    "compliance_domain_required_tag": "DHUB",
 }
 
 
@@ -886,6 +887,104 @@ def batch_delete_workspaces():
     return redirect(url_for("modify_workspaces"))
 
 
+@app.route("/workspace-compliance")
+def workspace_compliance():
+    fabric_headers = get_headers()
+    pbi_headers = get_powerbi_headers()
+    settings = load_settings()
+
+    workspaces = fetch_workspaces_admin(pbi_headers) or fetch_workspaces(fabric_headers)
+    compliance_tag = settings.get("compliance_domain_required_tag", "")
+
+    compliance_data = []
+    for ws in workspaces:
+        if ws.get("type") and ws["type"] != "Workspace":
+            continue
+
+        ws_id = ws["id"]
+        ws_name = ws.get("displayName") or ws.get("name", "")
+
+        # Get workspace detail (tags, domainId)
+        resp = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}",
+            headers=fabric_headers,
+        )
+        if resp.status_code != 200:
+            continue
+        detail = resp.json()
+        tags = detail.get("tags", [])
+        domain_id = detail.get("domainId")
+        tag_names = [t.get("displayName", "") for t in tags] if tags else []
+
+        # Check git connection
+        resp_git = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}/git/connection",
+            headers=fabric_headers,
+        )
+        has_git = resp_git.status_code == 200 and resp_git.json().get("gitProviderDetails")
+
+        # Check workspace identity via role assignments (ServicePrincipal with workspace name)
+        has_identity = bool(detail.get("identity"))
+        if not has_identity:
+            resp_roles = requests.get(
+                f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}/roleAssignments",
+                headers=fabric_headers,
+            )
+            if resp_roles.status_code == 200:
+                for ra in resp_roles.json().get("value", []):
+                    if ra.get("principal", {}).get("type") == "ServicePrincipal":
+                        has_identity = True
+                        break
+
+        # Check managed private endpoints
+        resp_mpe = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}/managedPrivateEndpoints",
+            headers=fabric_headers,
+        )
+        mpe_list = resp_mpe.json().get("value", []) if resp_mpe.status_code == 200 else []
+        kv_mpe = None
+        for mpe in mpe_list:
+            if "vault" in (mpe.get("targetSubresourceType") or "").lower():
+                kv_mpe = mpe
+                break
+        kv_mpe_status = None
+        if kv_mpe:
+            conn_state = kv_mpe.get("connectionState", {})
+            kv_mpe_status = conn_state.get("status", kv_mpe.get("provisioningState", "Unknown"))
+
+        # Check Log Analytics (PBI admin API)
+        resp_la = requests.get(
+            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{ws_id}",
+            headers=pbi_headers,
+        )
+        has_log_analytics = False
+        if resp_la.status_code == 200:
+            la_ws = resp_la.json().get("logAnalyticsWorkspace")
+            has_log_analytics = bool(la_ws)
+
+        # Domain required check
+        requires_domain = compliance_tag and any(compliance_tag.lower() in t.lower() for t in tag_names)
+        has_domain = bool(domain_id)
+
+        compliance_data.append({
+            "name": ws_name,
+            "id": ws_id,
+            "has_git": has_git,
+            "has_identity": has_identity,
+            "kv_mpe_status": kv_mpe_status,
+            "has_log_analytics": has_log_analytics,
+            "has_domain": has_domain,
+            "requires_domain": requires_domain,
+            "tags": tag_names,
+        })
+
+    return render_template(
+        "workspace_compliance.html",
+        compliance_data=compliance_data,
+        compliance_tag=compliance_tag,
+    )
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     if request.method == "POST":
@@ -894,6 +993,7 @@ def settings_page():
             "branches": [x.strip() for x in request.form.get("branches", "").split(",") if x.strip()],
             "mpe_cognitive_services_resource_id": request.form.get("mpe_cognitive_services_resource_id", "").strip(),
             "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
+            "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
         save_settings(settings)
         flash("Settings saved.", "success")

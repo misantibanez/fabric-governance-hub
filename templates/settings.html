@@ -106,6 +106,18 @@
                 </div>
             </div>
 
+            <div class="card">
+                <h2>Compliance Rules</h2>
+                <p>Define rules for workspace compliance checks.</p>
+
+                <div class="tag-group">
+                    <label>Tag that requires domain assignment</label>
+                    <div class="add-row">
+                        <input type="text" name="compliance_domain_required_tag" value="{{ settings.compliance_domain_required_tag or '' }}" placeholder="DHUB">
+                    </div>
+                </div>
+            </div>
+
             <button type="submit" class="btn-save">Save Settings</button>
         </form>
     </div>
