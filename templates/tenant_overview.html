@@ -222,13 +222,15 @@
             <div class="scrollable">
                 {% if gateways %}
                 <table id="gw-table">
-                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Details</th><th>Datasources</th></tr></thead>
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Contact Info</th><th>Users</th><th>Details</th><th>Datasources</th></tr></thead>
                     <tbody>
                     {% for gw in gateways %}
                         <tr>
                             <td>{{ gw.displayName or '—' }}</td>
                             <td style="font-family: monospace; font-size: 12px;">{{ gw.id }}</td>
                             <td><span class="badge badge-type">{{ gw.type }}</span></td>
+                            <td>{{ gw.contactInfo or '—' }}</td>
+                            <td>{{ gw.users or '—' }}</td>
                             <td>
                                 {% if gw.type == 'VirtualNetwork' %}
                                     Capacity: {{ gw.capacityId or 'N/A' }}<br>
