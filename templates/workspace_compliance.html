@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace Compliance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .summary-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px 24px; text-align: center; min-width: 140px; }
+        .summary-card .number { font-size: 28px; font-weight: 700; }
+        .summary-card .label { font-size: 12px; color: #6D6E71; margin-top: 2px; }
+        .num-green { color: #107c10; }
+        .num-red { color: #d13438; }
+        .num-orange { color: #F37021; }
+        .section { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 24px; overflow: hidden; }
+        .section-header { padding: 16px 24px; border-bottom: 1px solid #edebe9; display: flex; align-items: center; justify-content: space-between; }
+        .section-header h2 { font-size: 18px; font-weight: 600; color: #6D6E71; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; text-align: left; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #6D6E71; border-bottom: 1px solid #edebe9; position: sticky; top: 0; }
+        td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f3f2f1; }
+        tr:hover td { background: #fef5f0; }
+        .scrollable { max-height: 600px; overflow-y: auto; }
+        .check { color: #107c10; font-weight: 700; }
+        .cross { color: #d13438; font-weight: 700; }
+        .pending { color: #F37021; font-weight: 600; }
+        .na { color: #a19f9d; }
+        .search-box { padding: 12px 24px; border-bottom: 1px solid #edebe9; }
+        .search-box input { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; width: 100%; }
+        .search-box input:focus { outline: none; border-color: #F37021; }
+        .badge-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #fde8da; color: #F37021; margin-right: 4px; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Workspace Compliance</h1>
+    </header>
+    <div class="container">
+        {% set total = compliance_data | length %}
+        {% set compliant = [] %}
+        {% for ws in compliance_data %}
+            {% if ws.has_git and ws.has_identity and ws.kv_mpe_status and ws.has_log_analytics and ws.has_domain %}
+                {% if compliant.append(1) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+        {% set non_compliant = total - compliant | length %}
+
+        <div class="summary">
+            <div class="summary-card">
+                <div class="number" style="color: #323130;">{{ total }}</div>
+                <div class="label">Total Workspaces</div>
+            </div>
+            <div class="summary-card">
+                <div class="number num-green">{{ compliant | length }}</div>
+                <div class="label">Fully Compliant</div>
+            </div>
+            <div class="summary-card">
+                <div class="number num-red">{{ non_compliant }}</div>
+                <div class="label">Non-Compliant</div>
+            </div>
+            <div class="summary-card">
+                <div class="number num-orange">{{ compliance_data | selectattr('kv_mpe_status', 'equalto', 'Pending') | list | length }}</div>
+                <div class="label">MPE Pending Approval</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>Compliance Status <span id="compliance-count" style="font-size: 13px; font-weight: 400; color: #a19f9d;">({{ total }} workspaces)</span></h2>
+                <button onclick="exportCompliance()" style="padding: 6px 14px; border: none; border-radius: 4px; background: #F37021; color: white; font-size: 12px; font-weight: 600; cursor: pointer;">Export CSV</button>
+            </div>
+            <div class="search-box" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="compliance-search" placeholder="Search workspaces..." onkeyup="filterCompliance()" style="flex: 1; min-width: 150px;">
+                <select id="filter-git" onchange="filterCompliance()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px;">
+                    <option value="all">Git: All</option>
+                    <option value="yes">Git: ✓</option>
+                    <option value="no">Git: ✗</option>
+                </select>
+                <select id="filter-identity" onchange="filterCompliance()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px;">
+                    <option value="all">Identity: All</option>
+                    <option value="yes">Identity: ✓</option>
+                    <option value="no">Identity: ✗</option>
+                </select>
+                <select id="filter-mpe" onchange="filterCompliance()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px;">
+                    <option value="all">MPE: All</option>
+                    <option value="approved">MPE: Approved</option>
+                    <option value="pending">MPE: Pending</option>
+                    <option value="none">MPE: Not created</option>
+                </select>
+                <select id="filter-la" onchange="filterCompliance()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px;">
+                    <option value="all">Log Analytics: All</option>
+                    <option value="yes">Log Analytics: ✓</option>
+                    <option value="no">Log Analytics: ✗</option>
+                </select>
+                <select id="filter-domain" onchange="filterCompliance()" style="padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px;">
+                    <option value="all">Domain: All</option>
+                    <option value="yes">Domain: ✓</option>
+                    <option value="no">Domain: ✗</option>
+                </select>
+            </div>
+            <div class="scrollable">
+                <table id="compliance-table">
+                    <thead>
+                        <tr>
+                            <th>Workspace</th>
+                            <th>Git Integration</th>
+                            <th>Workspace Identity</th>
+                            <th>MPE Key Vault</th>
+                            <th>Log Analytics</th>
+                            <th>Domain ({{ compliance_tag }})</th>
+                            <th>Tags</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for ws in compliance_data %}
+                        <tr data-git="{{ 'yes' if ws.has_git else 'no' }}" data-identity="{{ 'yes' if ws.has_identity else 'no' }}" data-mpe="{{ 'approved' if ws.kv_mpe_status == 'Approved' else ('pending' if ws.kv_mpe_status == 'Pending' else 'none') }}" data-la="{{ 'yes' if ws.has_log_analytics else 'no' }}" data-domain="{{ 'yes' if ws.has_domain else 'no' }}">
+                            <td><strong>{{ ws.name }}</strong></td>
+                            <td>
+                                {% if ws.has_git %}<span class="check">✓</span>
+                                {% else %}<span class="cross">✗</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if ws.has_identity %}<span class="check">✓</span>
+                                {% else %}<span class="cross">✗</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if ws.kv_mpe_status == 'Approved' %}<span class="check">✓ Approved</span>
+                                {% elif ws.kv_mpe_status == 'Pending' %}<span class="pending">⏳ Pending</span>
+                                {% elif ws.kv_mpe_status %}<span class="pending">{{ ws.kv_mpe_status }}</span>
+                                {% else %}<span class="cross">✗ Not created</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if ws.has_log_analytics %}<span class="check">✓</span>
+                                {% else %}<span class="cross">✗</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if ws.has_domain %}<span class="check">✓</span>
+                                {% elif ws.requires_domain %}<span class="cross">✗ Required</span>
+                                {% else %}<span class="cross">✗</span>{% endif %}
+                            </td>
+                            <td>{% for t in ws.tags %}<span class="badge-tag">{{ t }}</span>{% endfor %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function filterCompliance() {
+            const text = document.getElementById('compliance-search').value.toLowerCase();
+            const git = document.getElementById('filter-git').value;
+            const identity = document.getElementById('filter-identity').value;
+            const mpe = document.getElementById('filter-mpe').value;
+            const la = document.getElementById('filter-la').value;
+            const domain = document.getElementById('filter-domain').value;
+            const rows = document.getElementById('compliance-table').querySelectorAll('tbody tr');
+            let visible = 0;
+            rows.forEach(row => {
+                const matchText = row.textContent.toLowerCase().includes(text);
+                const matchGit = git === 'all' || row.dataset.git === git;
+                const matchIdentity = identity === 'all' || row.dataset.identity === identity;
+                const matchMpe = mpe === 'all' || row.dataset.mpe === mpe;
+                const matchLa = la === 'all' || row.dataset.la === la;
+                const matchDomain = domain === 'all' || row.dataset.domain === domain;
+                const show = matchText && matchGit && matchIdentity && matchMpe && matchLa && matchDomain;
+                row.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+            document.getElementById('compliance-count').textContent = `(${visible} of ${rows.length})`;
+        }
+
+        function exportCompliance() {
+            const rows = document.getElementById('compliance-table').querySelectorAll('tbody tr');
+            let csv = 'Workspace,Git Integration,Workspace Identity,MPE Key Vault,Log Analytics,Domain,Tags\n';
+            rows.forEach(row => {
+                if (row.style.display === 'none') return;
+                const cells = row.querySelectorAll('td');
+                const line = Array.from(cells).map(c => '"' + c.textContent.trim().replace(/"/g, '""') + '"').join(',');
+                csv += line + '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'workspace_compliance.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>
