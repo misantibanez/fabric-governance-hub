@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Developer Workspaces</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .flash { padding: 12px 24px; margin-bottom: 16px; border-radius: 8px; font-size: 14px; }
+        .flash-success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+        .flash-error { background: #fed9cc; color: #d13438; border: 1px solid #d13438; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 24px; margin-bottom: 24px; }
+        .card h2 { font-size: 18px; font-weight: 600; color: #6D6E71; margin-bottom: 4px; }
+        .card p { font-size: 13px; color: #a19f9d; margin-bottom: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+        .form-group label { font-size: 13px; font-weight: 600; color: #6D6E71; }
+        .form-group select, .form-group input { padding: 8px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; }
+        .form-group select:focus, .form-group input:focus { outline: none; border-color: #F37021; }
+        .ws-info { background: #faf9f8; border: 1px solid #edebe9; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; display: none; }
+        .ws-info .info-row { display: flex; gap: 24px; flex-wrap: wrap; }
+        .ws-info .info-item { display: flex; gap: 4px; }
+        .ws-info .info-label { font-weight: 600; color: #6D6E71; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th { text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #6D6E71; border-bottom: 2px solid #edebe9; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f3f2f1; }
+        td input { width: 100%; padding: 6px 10px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 13px; }
+        td input:focus { outline: none; border-color: #F37021; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .btn-add { background: #6D6E71; color: white; }
+        .btn-add:hover { background: #555658; }
+        .btn-remove { background: #fed9cc; color: #d13438; font-size: 12px; padding: 4px 10px; }
+        .btn-remove:hover { background: #d13438; color: white; }
+        .btn-create { background: #F37021; color: white; padding: 10px 24px; font-size: 14px; margin-top: 8px; }
+        .btn-create:hover { background: #d4601a; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #fde8da; color: #F37021; margin-right: 4px; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Developer Workspaces</h1>
+    </header>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="/create-developer-workspaces">
+            <div class="card">
+                <h2>1. Select Main Workspace</h2>
+                <p>Choose the workspace with the Main tag to use as template for developer workspaces.</p>
+
+                <div class="form-group">
+                    <label>Main Workspace *</label>
+                    <select id="main-workspace" name="main_workspace_id" required onchange="loadWorkspaceInfo(this.value)">
+                        <option value="">Select a Main workspace...</option>
+                        {% for ws in main_workspaces %}
+                        <option value="{{ ws.id }}"
+                            data-name="{{ ws.displayName or ws.name }}"
+                            data-capacity="{{ ws.capacityId or '' }}"
+                            data-domain="{{ ws.domainId or '' }}"
+                            data-tags="{{ ws.tags | map(attribute='displayName') | join(', ') if ws.tags else '' }}"
+                            data-git-owner="{{ ws.git_owner or '' }}"
+                            data-git-repo="{{ ws.git_repo or '' }}"
+                            data-git-folder="{{ ws.git_folder or '' }}">
+                            {{ ws.displayName or ws.name }}
+                            {% if ws.tags %} — {% for t in ws.tags %}<span>{{ t.displayName }}</span>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="ws-info" id="ws-info">
+                    <div class="info-row">
+                        <div class="info-item"><span class="info-label">Capacity:</span> <span id="info-capacity">—</span></div>
+                        <div class="info-item"><span class="info-label">Domain:</span> <span id="info-domain">—</span></div>
+                        <div class="info-item"><span class="info-label">Tags:</span> <span id="info-tags">—</span></div>
+                    </div>
+                    <div class="info-row" style="margin-top: 8px;">
+                        <div class="info-item"><span class="info-label">Git Repo:</span> <span id="info-git">—</span></div>
+                        <div class="info-item"><span class="info-label">Git Folder:</span> <span id="info-folder">—</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>2. Add Developers</h2>
+                <p>Each developer will get a workspace with a feature branch and their own GitHub connection.</p>
+
+                <table id="dev-table">
+                    <thead>
+                        <tr>
+                            <th>Alias *</th>
+                            <th>GitHub Username *</th>
+                            <th>GitHub PAT *</th>
+                            <th style="width: 60px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="dev-rows">
+                    </tbody>
+                </table>
+                <button type="button" class="btn btn-add" onclick="addDevRow()">+ Add Developer</button>
+            </div>
+
+            <div class="card">
+                <h2>3. Summary</h2>
+                <p>The following will be created for each developer:</p>
+                <ul style="font-size: 13px; padding-left: 20px; color: #323130; line-height: 1.8;">
+                    <li>GitHub branch <code>feature/{alias}</code> (from main)</li>
+                    <li>Fabric GitHub connection <code>cx-gh-{alias}</code></li>
+                    <li>Workspace with same config as Main (tag: <strong>feature</strong> instead of <strong>Main</strong>)</li>
+                    <li>Workspace Identity + Managed Private Endpoints</li>
+                    <li>Git integration with developer's branch and connection</li>
+                </ul>
+                <br>
+                <button type="submit" class="btn btn-create">Create Developer Workspaces</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    const capacityMap = {{ capacity_map_json | safe }};
+    const domainMap = {{ domain_map_json | safe }};
+    let devCount = 0;
+
+    function loadWorkspaceInfo(wsId) {
+        const info = document.getElementById('ws-info');
+        if (!wsId) { info.style.display = 'none'; return; }
+        const opt = document.querySelector(`#main-workspace option[value="${wsId}"]`);
+        document.getElementById('info-capacity').textContent = capacityMap[opt.dataset.capacity] || '—';
+        document.getElementById('info-domain').textContent = domainMap[opt.dataset.domain] || '—';
+        document.getElementById('info-tags').textContent = opt.dataset.tags || '—';
+        const owner = opt.dataset.gitOwner;
+        const repo = opt.dataset.gitRepo;
+        document.getElementById('info-git').textContent = owner && repo ? `${owner}/${repo}` : '—';
+        document.getElementById('info-folder').textContent = opt.dataset.gitFolder || '—';
+        info.style.display = 'block';
+    }
+
+    function addDevRow() {
+        devCount++;
+        const tbody = document.getElementById('dev-rows');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" name="dev_alias_${devCount}" required placeholder="dev01"></td>
+            <td><input type="text" name="dev_github_user_${devCount}" required placeholder="github-username"></td>
+            <td><input type="password" name="dev_github_pat_${devCount}" required placeholder="ghp_..."></td>
+            <td><button type="button" class="btn btn-remove" onclick="this.closest('tr').remove()">✗</button></td>
+        `;
+        tbody.appendChild(tr);
+        document.getElementById('dev-count').value = devCount;
+    }
+
+    // Add first row by default
+    document.addEventListener('DOMContentLoaded', addDevRow);
+    </script>
+    <input type="hidden" name="dev_count" id="dev-count" value="0">
+</body>
+</html>
