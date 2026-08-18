@@ -102,7 +102,7 @@
                 <label>Use Case</label>
                 <div class="tag-chips">
                     {% for t in tags %}
-                    {% if t.displayName|lower in settings.use_cases|map('lower')|list %}
+                    {% if t.displayName|lower not in settings.environments|map('lower')|list and t.displayName|lower not in settings.branches|map('lower')|list %}
                     <button type="button" class="chip chip-bu" data-id="{{ t.id }}" onclick="toggleChip(this)">{{ t.displayName }}</button>
                     {% endif %}
                     {% endfor %}

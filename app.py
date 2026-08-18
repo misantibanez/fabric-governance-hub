@@ -16,8 +16,9 @@ SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 
 DEFAULT_SETTINGS = {
     "environments": ["Dev", "Int", "Prd"],
-    "use_cases": ["Data Hub", "Use Case A", "Use Case B"],
     "branches": ["feature", "main"],
+    "mpe_cognitive_services_resource_id": "",
+    "mpe_keyvault_resource_id": "",
 }
 
 
@@ -152,6 +153,26 @@ def fetch_tags(fabric_headers):
     return resp.json().get("value", [])
 
 
+def fetch_domain_tags(fabric_headers, domain_id):
+    """Filter admin tags scoped to a domain. For subdomains, inherit parent's tags."""
+    all_tags = fetch_tags(fabric_headers)
+    domain_tags = [
+        t for t in all_tags
+        if domain_id in json.dumps(t.get("scope", {}))
+    ]
+    # If subdomain has no tags, look up parent domain and inherit its tags
+    if not domain_tags:
+        domains = fetch_domains(fabric_headers)
+        domain_obj = next((d for d in domains if d["id"] == domain_id), None)
+        parent_id = domain_obj.get("parentDomainId") if domain_obj else None
+        if parent_id:
+            domain_tags = [
+                t for t in all_tags
+                if parent_id in json.dumps(t.get("scope", {}))
+            ]
+    return domain_tags
+
+
 # --- Fabric public APIs (use Fabric token) ---
 
 
@@ -199,19 +220,51 @@ def create_workspace_form():
     fabric_headers = get_headers()
     pbi_headers = get_powerbi_headers()
 
-    # Intenta PBI admin APIs primero, si falla usa Fabric APIs
     capacities = fetch_capacities_admin(pbi_headers) or fetch_capacities(fabric_headers)
-    workspaces = fetch_workspaces_admin(pbi_headers) or fetch_workspaces(fabric_headers)
 
     # Fabric admin APIs
     domains_raw = fetch_domains(fabric_headers)
     tags = fetch_tags(fabric_headers)
 
-    # Fabric public APIs
+    # Fabric public APIs — only connections (for git)
+    connections = fetch_connections(fabric_headers)
+
+    domain_map = {d["id"]: d["displayName"] for d in domains_raw}
+    for d in domains_raw:
+        parent_id = d.get("parentDomainId")
+        d["parentName"] = domain_map.get(parent_id, "") if parent_id else ""
+
+    domains = [d for d in domains_raw if not d.get("parentDomainId")]
+    subdomains = [d for d in domains_raw if d.get("parentDomainId")]
+
+    git_connections = [
+        c for c in connections
+        if "github" in c.get("connectionDetails", {}).get("type", "").lower()
+    ]
+
+    return render_template(
+        "index.html",
+        capacities=capacities,
+        domains=domains,
+        subdomains=subdomains,
+        tags=tags,
+        git_connections=git_connections,
+        settings=load_settings(),
+    )
+
+
+@app.route("/tenant-overview")
+def tenant_overview():
+    fabric_headers = get_headers()
+    pbi_headers = get_powerbi_headers()
+
+    capacities = fetch_capacities_admin(pbi_headers) or fetch_capacities(fabric_headers)
+    workspaces = fetch_workspaces_admin(pbi_headers) or fetch_workspaces(fabric_headers)
+    domains_raw = fetch_domains(fabric_headers)
+    tags = fetch_tags(fabric_headers)
     gateways = fetch_gateways(fabric_headers)
     connections = fetch_connections(fabric_headers)
 
-    # Power BI admin API
     for gw in gateways:
         gw["datasources"] = fetch_gateway_datasources(pbi_headers, gw["id"])
 
@@ -223,17 +276,24 @@ def create_workspace_form():
     domains = [d for d in domains_raw if not d.get("parentDomainId")]
     subdomains = [d for d in domains_raw if d.get("parentDomainId")]
 
-    # Filter GitHub source control connections
-    git_connections = []
-    for c in connections:
-        conn_type = c.get("connectionDetails", {}).get("type", "")
-        if "github" in conn_type.lower():
-            git_connections.append(c)
-    if not git_connections:
-        print(f"[DEBUG] Connection types: {[c.get('connectionDetails', {}).get('type', '') for c in connections[:10]]}")
+    # Enrich workspaces with tags and domainId
+    enriched = []
+    for ws in workspaces:
+        resp = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{ws['id']}",
+            headers=fabric_headers,
+        )
+        if resp.status_code == 200:
+            detail = resp.json()
+            ws["tags"] = detail.get("tags", [])
+            ws["domainId"] = detail.get("domainId")
+            enriched.append(ws)
+        elif resp.status_code != 404:
+            enriched.append(ws)
+    workspaces = enriched
 
     return render_template(
-        "index.html",
+        "tenant_overview.html",
         capacities=capacities,
         workspaces=workspaces,
         domains=domains,
@@ -241,9 +301,16 @@ def create_workspace_form():
         tags=tags,
         gateways=gateways,
         connections=connections,
-        git_connections=git_connections,
-        settings=load_settings(),
+        domain_map=domain_map,
     )
+
+
+@app.route("/domain-tags/<domain_id>")
+def get_domain_tags(domain_id):
+    from flask import jsonify
+    fabric_headers = get_headers()
+    tags = fetch_domain_tags(fabric_headers, domain_id)
+    return jsonify(tags)
 
 
 @app.route("/create-tag", methods=["POST"])
@@ -302,6 +369,17 @@ def create_workspace():
             "error",
         )
         return redirect(url_for("create_workspace_form"))
+
+    # 2b. Provision workspace identity
+    resp_id = requests.post(
+        f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/provisionIdentity",
+        headers=fabric_headers,
+    )
+    if resp_id.status_code not in (200, 202):
+        flash(
+            f"Workspace created but failed to provision identity: {resp_id.status_code} - {resp_id.text}",
+            "error",
+        )
 
     # 3. Assign to domain (Fabric admin API)
     if domain_id:
@@ -442,10 +520,36 @@ def create_workspace():
         if resp_lh.status_code not in (200, 201, 202):
             item_errors.append(f"Lakehouse {lakehouse_name}: {resp_lh.status_code} - {resp_lh.text[:150]}")
 
-    # 8. Connect to GitHub (optional)
+    # 8. Create managed private endpoints
+    mpe_errors = []
+    settings = load_settings()
+    mpe_url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/managedPrivateEndpoints"
+    mpe_headers = {**fabric_headers, "Content-Type": "application/json"}
+    kv_resource_id = settings.get("mpe_keyvault_resource_id", "")
+    if kv_resource_id:
+        resp_mpe = requests.post(mpe_url, headers=mpe_headers, json={
+            "name": f"mpe-kv-{name}",
+            "targetPrivateLinkResourceId": kv_resource_id,
+            "targetSubresourceType": "vault",
+            "requestMessage": f"Fabric {name}",
+        })
+        if resp_mpe.status_code != 201:
+            mpe_errors.append(f"MPE Key Vault: {resp_mpe.status_code} - {resp_mpe.text[:200]}")
+    cs_resource_id = settings.get("mpe_cognitive_services_resource_id", "")
+    if cs_resource_id and request.form.get("mpe_cognitive_services"):
+        resp_mpe = requests.post(mpe_url, headers=mpe_headers, json={
+            "name": f"mpe-cs-{name}",
+            "targetPrivateLinkResourceId": cs_resource_id,
+            "targetSubresourceType": "account",
+            "requestMessage": f"Fabric {name}",
+        })
+        if resp_mpe.status_code != 201:
+            mpe_errors.append(f"MPE Cognitive Services: {resp_mpe.status_code} - {resp_mpe.text[:200]}")
+
+    # 9. Connect to GitHub (optional)
     git_repo_url = request.form.get("git_repo_url", "").strip().rstrip("/")
     git_branch = request.form.get("git_branch", "").strip()
-    git_folder = request.form.get("git_folder", "").strip()
+    git_folder = request.form.get("git_folder", "").strip().strip("/")
     git_connection_id = request.form.get("git_connection_id", "").strip()
     git_errors = []
     if git_repo_url and git_branch and git_connection_id:
@@ -454,6 +558,35 @@ def create_workspace():
         git_owner = parts[0] if len(parts) >= 1 else ""
         git_repo = parts[1] if len(parts) >= 2 else ""
         if git_owner and git_repo:
+            # Create folder in GitHub repo if it doesn't exist
+            if git_folder:
+                github_pat = os.environ.get("GITHUB_PAT", "")
+                print(f"[DEBUG] GITHUB_PAT loaded: {'yes' if github_pat else 'NO - not set in .env'}")
+                if github_pat:
+                    gitkeep_path = f"{git_folder}/.gitkeep"
+                    gh_headers = {"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"}
+                    gh_resp = requests.get(
+                        f"https://api.github.com/repos/{git_owner}/{git_repo}/contents/{gitkeep_path}",
+                        headers=gh_headers,
+                        params={"ref": git_branch},
+                    )
+                    print(f"[DEBUG] GitHub check folder: {gh_resp.status_code}")
+                    if gh_resp.status_code == 404:
+                        import base64
+                        gh_create = requests.put(
+                            f"https://api.github.com/repos/{git_owner}/{git_repo}/contents/{gitkeep_path}",
+                            headers=gh_headers,
+                            json={
+                                "message": f"Create folder {git_folder}",
+                                "content": base64.b64encode(b"").decode(),
+                                "branch": git_branch,
+                            },
+                        )
+                        print(f"[DEBUG] GitHub create folder: {gh_create.status_code} - {gh_create.text[:300]}")
+                        if gh_create.status_code not in (200, 201):
+                            git_errors.append(f"GitHub create folder: {gh_create.status_code} - {gh_create.text[:200]}")
+
+            # Connect workspace to git
             resp_git = requests.post(
                 f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/git/connect",
                 headers={**fabric_headers, "Content-Type": "application/json"},
@@ -473,10 +606,18 @@ def create_workspace():
             )
             if resp_git.status_code != 200:
                 git_errors.append(f"Git connect: {resp_git.status_code} - {resp_git.text[:200]}")
+            else:
+                resp_init = requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/git/initializeConnection",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"initializationStrategy": "PreferWorkspace"},
+                )
+                if resp_init.status_code not in (200, 202):
+                    git_errors.append(f"Git initialize: {resp_init.status_code} - {resp_init.text[:200]}")
         else:
             git_errors.append("Could not parse owner/repo from URL")
 
-    all_errors = tag_errors + la_errors + role_errors + item_errors + git_errors
+    all_errors = tag_errors + la_errors + role_errors + item_errors + mpe_errors + git_errors
     if all_errors:
         flash(
             f"Workspace created but some assignments failed: {'; '.join(all_errors)}",
@@ -710,8 +851,9 @@ def settings_page():
     if request.method == "POST":
         settings = {
             "environments": [x.strip() for x in request.form.get("environments", "").split(",") if x.strip()],
-            "use_cases": [x.strip() for x in request.form.get("use_cases", "").split(",") if x.strip()],
             "branches": [x.strip() for x in request.form.get("branches", "").split(",") if x.strip()],
+            "mpe_cognitive_services_resource_id": request.form.get("mpe_cognitive_services_resource_id", "").strip(),
+            "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
         }
         save_settings(settings)
         flash("Settings saved.", "success")

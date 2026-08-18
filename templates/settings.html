@@ -71,21 +71,6 @@
                     <input type="hidden" name="environments" id="env-hidden" value="{{ settings.environments | join(',') }}">
                 </div>
 
-                <!-- Use Cases -->
-                <div class="tag-group">
-                    <label><span class="color-dot" style="background: #0078d4;"></span>Use Case</label>
-                    <div class="tag-list" id="uc-list">
-                        {% for t in settings.use_cases %}
-                        <span class="tag-item tag-uc">{{ t }} <span class="remove" onclick="removeTag('uc', this)">×</span></span>
-                        {% endfor %}
-                    </div>
-                    <div class="add-row">
-                        <input type="text" id="uc-input" placeholder="Add use case tag...">
-                        <button type="button" onclick="addTag('uc')">+ Add</button>
-                    </div>
-                    <input type="hidden" name="use_cases" id="uc-hidden" value="{{ settings.use_cases | join(',') }}">
-                </div>
-
                 <!-- Branch -->
                 <div class="tag-group">
                     <label><span class="color-dot" style="background: #6b3fa0;"></span>Branch</label>
@@ -102,12 +87,31 @@
                 </div>
             </div>
 
+            <div class="card">
+                <h2>Managed Private Endpoints</h2>
+                <p>Azure resource IDs for automatic MPE creation on new workspaces.</p>
+
+                <div class="tag-group">
+                    <label>Cognitive Services - Resource ID</label>
+                    <div class="add-row">
+                        <input type="text" name="mpe_cognitive_services_resource_id" value="{{ settings.mpe_cognitive_services_resource_id or '' }}" placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.CognitiveServices/accounts/...">
+                    </div>
+                </div>
+
+                <div class="tag-group">
+                    <label>Key Vault - Resource ID</label>
+                    <div class="add-row">
+                        <input type="text" name="mpe_keyvault_resource_id" value="{{ settings.mpe_keyvault_resource_id or '' }}" placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.KeyVault/vaults/...">
+                    </div>
+                </div>
+            </div>
+
             <button type="submit" class="btn-save">Save Settings</button>
         </form>
     </div>
 
     <script>
-    const cssClasses = { env: 'tag-env', uc: 'tag-uc', branch: 'tag-branch' };
+    const cssClasses = { env: 'tag-env', branch: 'tag-branch' };
 
     function getTagsFromList(group) {
         const list = document.getElementById(group + '-list');
