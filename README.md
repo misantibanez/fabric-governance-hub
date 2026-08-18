@@ -18,7 +18,7 @@ As your Fabric environment grows, so does the need for consistent, repeatable wo
 ## What can it do?
 
 ### Create Workspace — Full Provisioning in One Click
-Everything your workspace needs, configured from the start: capacity, domain, tags, Log Analytics, role assignments, initial folders, notebooks, pipelines, lakehouse, and even GitHub integration — all in a single, guided experience.
+Everything your workspace needs, configured from the start: capacity, domain, tags, Log Analytics, role assignments, workspace identity, managed private endpoints, initial folders, notebooks, pipelines, lakehouse, and GitHub integration — all in a single, guided experience.
 
 ![Create Workspace](docs/images/02-create-workspace.png)
 
@@ -34,13 +34,16 @@ Get a **visual overview** of every workspace in your tenant, organized by domain
 
 ![Workspace Map Filtered](docs/images/05-workspace-map-filtered.png)
 
+### Workspace Compliance — Governance at a Glance
+Check every workspace against compliance requirements: **Git integration**, **Workspace Identity**, **Managed Private Endpoints** (with approval status), **Log Analytics**, and **Domain assignment**. Filter by any compliance dimension, export to CSV, and track KPIs for compliant vs non-compliant workspaces.
+
 ### Settings — Configure Once, Use Everywhere
-Define your tag groups (Environment, Use Case, Branch) in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and batch operations all stay consistent.
+Define tag groups (Environment, Branch), managed private endpoint resource IDs, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
 
 ![Settings](docs/images/06-settings.png)
 
 ### Tenant Overview — Everything at a Glance
-Capacities, workspaces, domains, subdomains, tags, gateways, connections — all visible in a single dashboard with filters and search.
+Capacities, workspaces, domains, subdomains, tags, gateways (with contact info and users), connections — all visible in a single dashboard with filters, search, and CSV export.
 
 ![Tenant Overview](docs/images/07-tenant-overview.png)
 
@@ -119,6 +122,7 @@ templates/
   ├── menu.html               ← Main menu
   ├── index.html              ← Create Workspace form
   ├── tenant_overview.html    ← Tenant Overview dashboard
+  ├── workspace_compliance.html ← Compliance checks
   ├── modify_workspaces.html  ← Batch workspace operations
   ├── workspace_map.html      ← Visual workspace map
   └── settings.html           ← Settings page
