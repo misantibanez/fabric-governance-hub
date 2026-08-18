@@ -923,18 +923,23 @@ def workspace_compliance():
         )
         has_git = resp_git.status_code == 200 and resp_git.json().get("gitProviderDetails")
 
-        # Check workspace identity via role assignments (ServicePrincipal with workspace name)
-        has_identity = bool(detail.get("identity"))
-        if not has_identity:
-            resp_roles = requests.get(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}/roleAssignments",
-                headers=fabric_headers,
-            )
-            if resp_roles.status_code == 200:
-                for ra in resp_roles.json().get("value", []):
-                    if ra.get("principal", {}).get("type") == "ServicePrincipal":
-                        has_identity = True
-                        break
+        # Check workspace identity via Graph API (service principal with workspace name)
+        graph_headers = {"Authorization": f"Bearer {get_graph_token()}"}
+        resp_sp = requests.get(
+            "https://graph.microsoft.com/v1.0/servicePrincipals",
+            headers=graph_headers,
+            params={"$filter": f"displayName eq '{ws_name}'", "$select": "id,displayName", "$top": "1"},
+        )
+        has_identity = resp_sp.status_code == 200 and bool(resp_sp.json().get("value"))
+
+        # Check Log Analytics and users from PBI admin API
+        has_log_analytics = False
+        resp_pbi_ws = requests.get(
+            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{ws_id}",
+            headers=pbi_headers,
+        )
+        if resp_pbi_ws.status_code == 200:
+            has_log_analytics = bool(resp_pbi_ws.json().get("logAnalyticsWorkspace"))
 
         # Check managed private endpoints
         resp_mpe = requests.get(
@@ -951,16 +956,6 @@ def workspace_compliance():
         if kv_mpe:
             conn_state = kv_mpe.get("connectionState", {})
             kv_mpe_status = conn_state.get("status", kv_mpe.get("provisioningState", "Unknown"))
-
-        # Check Log Analytics (PBI admin API)
-        resp_la = requests.get(
-            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{ws_id}",
-            headers=pbi_headers,
-        )
-        has_log_analytics = False
-        if resp_la.status_code == 200:
-            la_ws = resp_la.json().get("logAnalyticsWorkspace")
-            has_log_analytics = bool(la_ws)
 
         # Domain required check
         requires_domain = compliance_tag and any(compliance_tag.lower() in t.lower() for t in tag_names)
