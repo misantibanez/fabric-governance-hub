@@ -940,279 +940,299 @@ def developer_workspaces():
 
 @app.route("/create-developer-workspaces", methods=["POST"])
 def create_developer_workspaces():
-    fabric_headers = get_headers()
-    pbi_headers = get_powerbi_headers()
-    settings = load_settings()
-    main_ws_id = request.form["main_workspace_id"]
+    from flask import jsonify
+    # Save form data to session for the SSE endpoint to consume
     dev_count = int(request.form.get("dev_count", 0))
-
-    # Get main workspace details
-    resp = requests.get(
-        f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}",
-        headers=fabric_headers,
-    )
-    if resp.status_code != 200:
-        flash("Could not load main workspace details.", "error")
-        return redirect(url_for("developer_workspaces"))
-    main_ws = resp.json()
-    main_name = main_ws.get("displayName", "")
-    main_tags = main_ws.get("tags", [])
-    capacity_id = main_ws.get("capacityId", "")
-    domain_id = main_ws.get("domainId", "")
-
-    # Get main workspace git info
-    resp_git = requests.get(
-        f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}/git/connection",
-        headers=fabric_headers,
-    )
-    git_owner, git_repo, git_folder, main_conn_id = "", "", "", ""
-    if resp_git.status_code == 200:
-        git_conn = resp_git.json()
-        gd = git_conn.get("gitProviderDetails", {})
-        git_owner = gd.get("ownerName", "")
-        git_repo = gd.get("repositoryName", "")
-        git_folder = gd.get("directoryName", "")
-        creds = git_conn.get("myGitCredentials", {})
-        main_conn_id = creds.get("connectionId", "")
-
-    # Get main workspace roles
-    resp_roles = requests.get(
-        f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}/roleAssignments",
-        headers=fabric_headers,
-    )
-    role_assignments = resp_roles.json().get("value", []) if resp_roles.status_code == 200 else []
-
-    # Get main workspace Log Analytics config
-    log_analytics_config = None
-    resp_la = requests.get(
-        f"https://api.powerbi.com/v1.0/myorg/admin/groups/{main_ws_id}",
-        headers=pbi_headers,
-    )
-    if resp_la.status_code == 200:
-        log_analytics_config = resp_la.json().get("logAnalyticsWorkspace")
-
-    # Swap Main tag for feature
-    feature_tag_ids = []
-    for t in main_tags:
-        name = t.get("displayName", "")
-        if name.lower() == "main":
-            # Find the "feature" tag
-            all_tags = fetch_tags(fabric_headers)
-            for at in all_tags:
-                if at.get("displayName", "").lower() == "feature":
-                    feature_tag_ids.append(at["id"])
-                    break
-        else:
-            feature_tag_ids.append(t["id"])
-
-    github_pat = os.environ.get("GITHUB_PAT", "")
-    all_results = []
-    log = []
-    print(f"[DEV-WS] Starting creation for {dev_count} developer(s) from workspace '{main_name}'")
-    log.append(f"Starting creation for {dev_count} developer(s) from workspace '{main_name}'")
-
+    developers = []
     for i in range(1, dev_count + 1):
         alias = request.form.get(f"dev_alias_{i}", "").strip()
         gh_user = request.form.get(f"dev_github_user_{i}", "").strip()
         gh_pat = request.form.get(f"dev_github_pat_{i}", "").strip()
-        if not alias or not gh_user or not gh_pat:
-            continue
+        if alias and gh_user and gh_pat:
+            developers.append({"alias": alias, "gh_user": gh_user, "gh_pat": gh_pat})
+    session["dev_job"] = {
+        "main_ws_id": request.form["main_workspace_id"],
+        "developers": developers,
+    }
+    return jsonify({"ok": True})
 
-        dev_errors = []
-        branch_name = f"feature/{alias}"
-        ws_name = f"{main_name}-{alias}"
-        print(f"[DEV-WS] [{alias}] Starting...")
-        log.append(f"\n[{alias}] Starting...")
 
-        # 1. Create GitHub branch feature/{alias} from main
-        print(f"[DEV-WS] [{alias}] Step 1: Creating GitHub branch '{branch_name}'")
-        log.append(f"[{alias}] Step 1: Creating GitHub branch '{branch_name}'")
-        if git_owner and git_repo and github_pat:
-            # Get main branch SHA
-            resp_ref = requests.get(
-                f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs/heads/main",
-                headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
-            )
-            if resp_ref.status_code == 200:
-                main_sha = resp_ref.json()["object"]["sha"]
-                # Check if branch exists
-                resp_br = requests.get(
-                    f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs/heads/{branch_name}",
-                    headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
-                )
-                if resp_br.status_code == 404:
-                    resp_create_br = requests.post(
-                        f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs",
-                        headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
-                        json={"ref": f"refs/heads/{branch_name}", "sha": main_sha},
-                    )
-                    if resp_create_br.status_code not in (200, 201):
-                        dev_errors.append(f"GitHub branch: {resp_create_br.status_code} - {resp_create_br.text[:150]}")
-            else:
-                dev_errors.append(f"GitHub get main SHA: {resp_ref.status_code}")
+@app.route("/dev-ws-stream")
+def dev_ws_stream():
+    from flask import Response, stream_with_context
+    job = session.pop("dev_job", None)
+    if not job:
+        def empty():
+            yield "data: ERROR: No job data found\n\n"
+            yield "event: done\ndata: done\n\n"
+        return Response(empty(), mimetype="text/event-stream")
 
-        # 2. Create Fabric GitHub connection for developer
-        conn_name = f"cx-gh-{alias}"
-        print(f"[DEV-WS] [{alias}] Step 2: Creating Fabric connection")
-        log.append(f"[{alias}] Step 2: Creating Fabric connection '{conn_name}'")
-        dev_conn_id = None
-        # Check if connection already exists
-        connections = fetch_connections(fabric_headers)
-        for c in connections:
-            if c.get("displayName", "") == conn_name:
-                dev_conn_id = c["id"]
-                break
-        if not dev_conn_id:
-            conn_body = {
-                "connectivityType": "ShareableCloud",
-                "displayName": conn_name,
-                "connectionDetails": {
-                    "type": "GitHubSourceControl",
-                    "creationMethod": "GitHubSourceControl.Contents",
-                    "parameters": [{"dataType": "Text", "name": "url", "value": f"https://github.com/{git_owner}/{git_repo}"}],
-                },
-                "credentialDetails": {
-                    "credentials": {"credentialType": "Key", "key": gh_pat},
-                },
-            }
-            resp_conn = requests.post(
-                "https://api.fabric.microsoft.com/v1/connections",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json=conn_body,
-            )
-            if resp_conn.status_code == 201:
-                dev_conn_id = resp_conn.json()["id"]
-            else:
-                dev_errors.append(f"Fabric connection: {resp_conn.status_code} - {resp_conn.text[:150]}")
+    def generate():
+        fabric_headers = get_headers()
+        pbi_headers = get_powerbi_headers()
+        settings = load_settings()
+        main_ws_id = job["main_ws_id"]
+        developers = job["developers"]
 
-        # 3. Create workspace
-        print(f"[DEV-WS] [{alias}] Step 3: Creating workspace '{ws_name}'")
-        log.append(f"[{alias}] Step 3: Creating workspace '{ws_name}'")
-        resp_ws = requests.post(
-            "https://api.fabric.microsoft.com/v1/workspaces",
-            headers={**fabric_headers, "Content-Type": "application/json"},
-            json={"displayName": ws_name, "description": f"Developer workspace for {alias}"},
-        )
-        if resp_ws.status_code not in (200, 201):
-            dev_errors.append(f"Workspace: {resp_ws.status_code} - {resp_ws.text[:150]}")
-            log.append(f"[{alias}] ERROR: Failed to create workspace")
-            all_results.append({"alias": alias, "errors": dev_errors})
-            continue
-        dev_ws_id = resp_ws.json()["id"]
-
-        # 3a. Assign capacity
-        if capacity_id:
-            requests.post(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/assignToCapacity",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json={"capacityId": capacity_id},
-            )
-
-        # 3b. Provision identity
-        requests.post(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/provisionIdentity",
+        resp = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}",
             headers=fabric_headers,
         )
+        if resp.status_code != 200:
+            yield "data: ERROR: Could not load main workspace\n\n"
+            yield "event: done\ndata: done\n\n"
+            return
+        main_ws = resp.json()
+        main_name = main_ws.get("displayName", "")
+        main_tags = main_ws.get("tags", [])
+        capacity_id = main_ws.get("capacityId", "")
+        domain_id = main_ws.get("domainId", "")
 
-        # 3c. Assign domain
-        if domain_id:
-            requests.post(
-                f"https://api.fabric.microsoft.com/v1/admin/domains/{domain_id}/assignWorkspaces",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json={"workspacesIds": [dev_ws_id]},
-            )
+        yield f"data: Starting creation for {len(developers)} developer(s) from workspace '{main_name}'\n\n"
 
-        # 3d. Apply tags (feature instead of main)
-        if feature_tag_ids:
-            requests.post(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/applyTags",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json={"tags": feature_tag_ids},
-            )
+        # Get git info
+        resp_git = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}/git/connection",
+            headers=fabric_headers,
+        )
+        git_owner, git_repo, git_folder = "", "", ""
+        if resp_git.status_code == 200:
+            gd = resp_git.json().get("gitProviderDetails") or {}
+            git_owner = gd.get("ownerName", "")
+            git_repo = gd.get("repositoryName", "")
+            git_folder = gd.get("directoryName", "")
 
-        # 3e. Replicate role assignments
-        for ra in role_assignments:
-            principal = ra.get("principal", {})
-            if principal.get("type") == "ServicePrincipal":
-                continue
-            requests.post(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/roleAssignments",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json={"principal": {"id": principal["id"], "type": principal["type"]}, "role": ra["role"]},
-            )
+        # Get roles
+        resp_roles = requests.get(
+            f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}/roleAssignments",
+            headers=fabric_headers,
+        )
+        role_assignments = resp_roles.json().get("value", []) if resp_roles.status_code == 200 else []
 
-        # 3f. Create MPEs
-        mpe_url = f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/managedPrivateEndpoints"
-        mpe_headers = {**fabric_headers, "Content-Type": "application/json"}
-        kv_resource_id = settings.get("mpe_keyvault_resource_id", "")
-        if kv_resource_id:
-            requests.post(mpe_url, headers=mpe_headers, json={
-                "name": f"mpe-kv-{ws_name}", "targetPrivateLinkResourceId": kv_resource_id,
-                "targetSubresourceType": "vault", "requestMessage": f"Fabric {ws_name}",
-            })
+        # Get Log Analytics config
+        log_analytics_config = None
+        resp_la = requests.get(
+            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{main_ws_id}",
+            headers=pbi_headers,
+        )
+        if resp_la.status_code == 200:
+            log_analytics_config = resp_la.json().get("logAnalyticsWorkspace")
 
-        # 3g. Configure Log Analytics (same as main)
-        if log_analytics_config:
-            requests.patch(
-                f"https://api.powerbi.com/v1.0/myorg/admin/groups/{dev_ws_id}",
-                headers={**pbi_headers, "Content-Type": "application/json"},
-                json={"logAnalyticsWorkspace": log_analytics_config},
-            )
+        # Swap Main tag for feature
+        feature_tag_ids = []
+        all_tags = fetch_tags(fabric_headers)
+        for t in main_tags:
+            if t.get("displayName", "").lower() == "main":
+                for at in all_tags:
+                    if at.get("displayName", "").lower() == "feature":
+                        feature_tag_ids.append(at["id"])
+                        break
+            else:
+                feature_tag_ids.append(t["id"])
 
-        # 4. Git integration
-        print(f"[DEV-WS] [{alias}] Step 4: Git integration")
-        log.append(f"[{alias}] Step 4: Git integration")
-        if dev_conn_id and git_owner and git_repo:
-            # Create .gitkeep in folder for the feature branch
-            if git_folder and git_folder != "/" and github_pat:
-                gitkeep_path = f"{git_folder.strip('/')}/.gitkeep"
-                gh_check = requests.get(
-                    f"https://api.github.com/repos/{git_owner}/{git_repo}/contents/{gitkeep_path}",
+        github_pat = os.environ.get("GITHUB_PAT", "")
+
+        for dev in developers:
+            alias = dev["alias"]
+            gh_pat = dev["gh_pat"]
+            branch_name = f"feature/{alias}"
+            ws_name = f"{main_name}-{alias}"
+            dev_errors = []
+
+            yield f"data: \n\n"
+            yield f"data: [{alias}] Starting...\n\n"
+
+            # 1. GitHub branch
+            yield f"data: [{alias}] Step 1: Creating GitHub branch '{branch_name}'\n\n"
+            if git_owner and git_repo and github_pat:
+                resp_ref = requests.get(
+                    f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs/heads/main",
                     headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
-                    params={"ref": branch_name},
                 )
-                if gh_check.status_code == 404:
-                    import base64
-                    requests.put(
+                if resp_ref.status_code == 200:
+                    main_sha = resp_ref.json()["object"]["sha"]
+                    resp_br = requests.get(
+                        f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs/heads/{branch_name}",
+                        headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
+                    )
+                    if resp_br.status_code == 404:
+                        resp_create_br = requests.post(
+                            f"https://api.github.com/repos/{git_owner}/{git_repo}/git/refs",
+                            headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
+                            json={"ref": f"refs/heads/{branch_name}", "sha": main_sha},
+                        )
+                        if resp_create_br.status_code in (200, 201):
+                            yield f"data: [{alias}]   ✓ Branch created\n\n"
+                        else:
+                            dev_errors.append(f"GitHub branch: {resp_create_br.status_code}")
+                            yield f"data: [{alias}]   ERROR: Branch creation failed ({resp_create_br.status_code})\n\n"
+                    else:
+                        yield f"data: [{alias}]   ✓ Branch already exists\n\n"
+                else:
+                    dev_errors.append(f"GitHub get main SHA: {resp_ref.status_code}")
+                    yield f"data: [{alias}]   ERROR: Could not get main branch SHA\n\n"
+
+            # 2. Fabric connection
+            conn_name = f"cx-gh-{alias}"
+            yield f"data: [{alias}] Step 2: Creating Fabric connection '{conn_name}'\n\n"
+            dev_conn_id = None
+            connections = fetch_connections(fabric_headers)
+            for c in connections:
+                if c.get("displayName", "") == conn_name:
+                    dev_conn_id = c["id"]
+                    break
+            if dev_conn_id:
+                yield f"data: [{alias}]   ✓ Connection already exists\n\n"
+            else:
+                resp_conn = requests.post(
+                    "https://api.fabric.microsoft.com/v1/connections",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={
+                        "connectivityType": "ShareableCloud",
+                        "displayName": conn_name,
+                        "connectionDetails": {
+                            "type": "GitHubSourceControl",
+                            "creationMethod": "GitHubSourceControl.Contents",
+                            "parameters": [{"dataType": "Text", "name": "url", "value": f"https://github.com/{git_owner}/{git_repo}"}],
+                        },
+                        "credentialDetails": {
+                            "credentials": {"credentialType": "Key", "key": gh_pat},
+                        },
+                    },
+                )
+                if resp_conn.status_code == 201:
+                    dev_conn_id = resp_conn.json()["id"]
+                    yield f"data: [{alias}]   ✓ Connection created\n\n"
+                else:
+                    dev_errors.append(f"Fabric connection: {resp_conn.status_code}")
+                    yield f"data: [{alias}]   ERROR: Connection failed ({resp_conn.status_code})\n\n"
+
+            # 3. Create workspace
+            yield f"data: [{alias}] Step 3: Creating workspace '{ws_name}'\n\n"
+            resp_ws = requests.post(
+                "https://api.fabric.microsoft.com/v1/workspaces",
+                headers={**fabric_headers, "Content-Type": "application/json"},
+                json={"displayName": ws_name, "description": f"Developer workspace for {alias}"},
+            )
+            if resp_ws.status_code not in (200, 201):
+                dev_errors.append(f"Workspace: {resp_ws.status_code}")
+                yield f"data: [{alias}]   ERROR: Workspace creation failed ({resp_ws.status_code})\n\n"
+                continue
+            dev_ws_id = resp_ws.json()["id"]
+            yield f"data: [{alias}]   ✓ Workspace created\n\n"
+
+            # 3a. Capacity
+            if capacity_id:
+                requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/assignToCapacity",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"capacityId": capacity_id},
+                )
+                yield f"data: [{alias}]   ✓ Capacity assigned\n\n"
+
+            # 3b. Identity
+            requests.post(f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/provisionIdentity", headers=fabric_headers)
+            yield f"data: [{alias}]   ✓ Identity provisioned\n\n"
+
+            # 3c. Domain
+            if domain_id:
+                requests.post(
+                    f"https://api.fabric.microsoft.com/v1/admin/domains/{domain_id}/assignWorkspaces",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"workspacesIds": [dev_ws_id]},
+                )
+                yield f"data: [{alias}]   ✓ Domain assigned\n\n"
+
+            # 3d. Tags
+            if feature_tag_ids:
+                requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/applyTags",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"tags": feature_tag_ids},
+                )
+                yield f"data: [{alias}]   ✓ Tags applied (feature)\n\n"
+
+            # 3e. Roles
+            for ra in role_assignments:
+                principal = ra.get("principal", {})
+                if principal.get("type") == "ServicePrincipal":
+                    continue
+                requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/roleAssignments",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"principal": {"id": principal["id"], "type": principal["type"]}, "role": ra["role"]},
+                )
+            yield f"data: [{alias}]   ✓ Role assignments replicated\n\n"
+
+            # 3f. MPEs
+            kv_resource_id = settings.get("mpe_keyvault_resource_id", "")
+            if kv_resource_id:
+                requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/managedPrivateEndpoints",
+                    headers={**fabric_headers, "Content-Type": "application/json"},
+                    json={"name": f"mpe-kv-{ws_name}", "targetPrivateLinkResourceId": kv_resource_id,
+                          "targetSubresourceType": "vault", "requestMessage": f"Fabric {ws_name}"},
+                )
+                yield f"data: [{alias}]   ✓ MPE Key Vault created\n\n"
+
+            # 3g. Log Analytics
+            if log_analytics_config:
+                requests.patch(
+                    f"https://api.powerbi.com/v1.0/myorg/admin/groups/{dev_ws_id}",
+                    headers={**pbi_headers, "Content-Type": "application/json"},
+                    json={"logAnalyticsWorkspace": log_analytics_config},
+                )
+                yield f"data: [{alias}]   ✓ Log Analytics configured\n\n"
+
+            # 4. Git integration
+            yield f"data: [{alias}] Step 4: Git integration\n\n"
+            if dev_conn_id and git_owner and git_repo:
+                if git_folder and git_folder != "/" and github_pat:
+                    gitkeep_path = f"{git_folder.strip('/')}/.gitkeep"
+                    gh_check = requests.get(
                         f"https://api.github.com/repos/{git_owner}/{git_repo}/contents/{gitkeep_path}",
                         headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
-                        json={"message": f"Create folder {git_folder}", "content": base64.b64encode(b"").decode(), "branch": branch_name},
+                        params={"ref": branch_name},
                     )
+                    if gh_check.status_code == 404:
+                        import base64
+                        requests.put(
+                            f"https://api.github.com/repos/{git_owner}/{git_repo}/contents/{gitkeep_path}",
+                            headers={"Authorization": f"token {github_pat}", "Accept": "application/vnd.github.v3+json"},
+                            json={"message": f"Create folder {git_folder}", "content": base64.b64encode(b"").decode(), "branch": branch_name},
+                        )
 
-            resp_git_conn = requests.post(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/git/connect",
-                headers={**fabric_headers, "Content-Type": "application/json"},
-                json={
-                    "gitProviderDetails": {
-                        "gitProviderType": "GitHub", "ownerName": git_owner,
-                        "repositoryName": git_repo, "branchName": branch_name,
-                        "directoryName": git_folder or "/",
-                    },
-                    "myGitCredentials": {"source": "ConfiguredConnection", "connectionId": dev_conn_id},
-                },
-            )
-            if resp_git_conn.status_code == 200:
-                requests.post(
-                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/git/initializeConnection",
+                resp_git_conn = requests.post(
+                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/git/connect",
                     headers={**fabric_headers, "Content-Type": "application/json"},
-                    json={"initializationStrategy": "PreferWorkspace"},
+                    json={
+                        "gitProviderDetails": {
+                            "gitProviderType": "GitHub", "ownerName": git_owner,
+                            "repositoryName": git_repo, "branchName": branch_name,
+                            "directoryName": git_folder or "/",
+                        },
+                        "myGitCredentials": {"source": "ConfiguredConnection", "connectionId": dev_conn_id},
+                    },
                 )
-            elif resp_git_conn.status_code != 200:
-                dev_errors.append(f"Git connect: {resp_git_conn.status_code} - {resp_git_conn.text[:150]}")
+                if resp_git_conn.status_code == 200:
+                    requests.post(
+                        f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/git/initializeConnection",
+                        headers={**fabric_headers, "Content-Type": "application/json"},
+                        json={"initializationStrategy": "PreferWorkspace"},
+                    )
+                    yield f"data: [{alias}]   ✓ Git connected and initialized\n\n"
+                else:
+                    dev_errors.append(f"Git connect: {resp_git_conn.status_code}")
+                    yield f"data: [{alias}]   ERROR: Git connect failed ({resp_git_conn.status_code})\n\n"
 
-        print(f"[DEV-WS] [{alias}] Done. Errors: {dev_errors if dev_errors else 'None'}")
-        if dev_errors:
-            log.append(f"[{alias}] ERROR: {'; '.join(dev_errors)}")
-        else:
-            log.append(f"[{alias}] ✓ Workspace '{ws_name}' created successfully")
-        all_results.append({"alias": alias, "workspace": ws_name, "errors": dev_errors})
+            if dev_errors:
+                yield f"data: [{alias}] ⚠️ Completed with errors: {'; '.join(dev_errors)}\n\n"
+            else:
+                yield f"data: [{alias}] ✓ Workspace '{ws_name}' created successfully\n\n"
 
-    # Return JSON response for UI
-    from flask import jsonify
-    errors_flat = []
-    for r in all_results:
-        errors_flat.extend(r.get("errors", []))
-    return jsonify({"log": log, "errors": errors_flat, "results": all_results})
+        yield "event: done\ndata: done\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 @app.route("/workspace-compliance")

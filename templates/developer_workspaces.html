@@ -144,30 +144,40 @@
         const progressCard = document.getElementById('progress-card');
         const progressLog = document.getElementById('progress-log');
         progressCard.style.display = 'block';
-        progressLog.textContent = '⏳ Starting...\n';
+        progressLog.textContent = '';
         progressCard.scrollIntoView({ behavior: 'smooth' });
 
         const formData = new FormData(form);
+        // POST form data to save to session, then open SSE stream
         fetch('/create-developer-workspaces', { method: 'POST', body: formData })
             .then(r => r.json())
             .then(data => {
-                progressLog.textContent = '';
-                for (const line of data.log) {
+                if (!data.ok) { progressLog.textContent = 'ERROR: Failed to start'; return; }
+                const source = new EventSource('/dev-ws-stream');
+                source.onmessage = function(e) {
                     const span = document.createElement('span');
-                    span.textContent = line + '\n';
-                    if (line.includes('ERROR')) span.style.color = '#f48771';
-                    else if (line.includes('✓')) span.style.color = '#89d185';
-                    else if (line.includes('Starting')) span.style.color = '#569cd6';
+                    span.textContent = e.data + '\n';
+                    if (e.data.includes('ERROR')) span.style.color = '#f48771';
+                    else if (e.data.includes('✓')) span.style.color = '#89d185';
+                    else if (e.data.includes('Starting')) span.style.color = '#569cd6';
+                    else if (e.data.includes('Step')) span.style.color = '#dcdcaa';
                     progressLog.appendChild(span);
-                }
-                if (data.errors.length === 0) {
-                    progressLog.innerHTML += '\n<span style="color: #89d185; font-weight: bold;">✅ All done!</span>\n';
-                } else {
-                    progressLog.innerHTML += '\n<span style="color: #f48771; font-weight: bold;">⚠️ Completed with errors</span>\n';
-                }
+                    progressLog.scrollTop = progressLog.scrollHeight;
+                };
+                source.addEventListener('done', function() {
+                    source.close();
+                    const done = document.createElement('span');
+                    done.style.color = '#89d185';
+                    done.style.fontWeight = 'bold';
+                    done.textContent = '\n✅ All done!\n';
+                    progressLog.appendChild(done);
+                });
+                source.onerror = function() {
+                    source.close();
+                };
             })
             .catch(err => {
-                progressLog.textContent += 'ERROR: Request failed - ' + err.message + '\n';
+                progressLog.textContent = 'ERROR: Request failed - ' + err.message + '\n';
             });
     }
 

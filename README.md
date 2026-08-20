@@ -27,6 +27,11 @@ Select multiple workspaces and apply changes in bulk: **apply or remove tags**, 
 
 ![Modify Workspaces](docs/images/03-modify-workspaces.png)
 
+### Developer Workspaces — Isolated Environments for Every Developer
+Create developer workspaces from a Main workspace template. Each developer receives an isolated Fabric workspace, a dedicated feature branch, and an individual GitHub connection while preserving the template's configuration, identity, and managed private endpoints.
+
+![Developer Workspaces](docs/images/09-developer-workspaces.png)
+
 ### Workspace Map — See Your Entire Landscape
 Get a **visual overview** of every workspace in your tenant, organized by domain and classified by type (PII, Reference Assets, Use Case). Filter by environment, use case, branch, and capacity to instantly understand your workspace topology.
 
@@ -37,10 +42,14 @@ Get a **visual overview** of every workspace in your tenant, organized by domain
 ### Workspace Compliance — Governance at a Glance
 Check every workspace against compliance requirements: **Git integration**, **Workspace Identity**, **Managed Private Endpoints** (with approval status), **Log Analytics**, and **Domain assignment**. Filter by any compliance dimension, export to CSV, and track KPIs for compliant vs non-compliant workspaces.
 
+![Workspace Compliance](docs/images/10-workspace-compliance.png)
+
 ### Settings — Configure Once, Use Everywhere
 Define tag groups (Environment, Branch), managed private endpoint resource IDs, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
 
 ![Settings](docs/images/06-settings.png)
+
+![Managed Private Endpoints and Compliance Settings](docs/images/00-settings.png)
 
 ### Tenant Overview — Everything at a Glance
 Capacities, workspaces, domains, subdomains, tags, gateways (with contact info and users), connections — all visible in a single dashboard with filters, search, and CSV export.
