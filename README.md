@@ -49,8 +49,6 @@ Define tag groups (Environment, Branch), managed private endpoint resource IDs, 
 
 ![Settings](docs/images/06-settings.png)
 
-![Managed Private Endpoints and Compliance Settings](docs/images/00-settings.png)
-
 ### Tenant Overview — Everything at a Glance
 Capacities, workspaces, domains, subdomains, tags, gateways (with contact info and users), connections — all visible in a single dashboard with filters, search, and CSV export.
 
