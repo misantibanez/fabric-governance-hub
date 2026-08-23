@@ -44,12 +44,15 @@ Check every workspace against compliance requirements: **Git integration**, **Wo
 
 ![Workspace Compliance](docs/images/10-workspace-compliance.png)
 
+### Gateway Governance — Control Tenant-Wide Gateway Access
+Review and update personal and standard gateway installation policies, manage authorized standard gateway installers, and inspect registered gateway clusters. The module resolves Entra users and nested groups before applying changes and uses separate device-code sessions for Azure identity and the Data Gateway service.
+
+![Gateway Governance](docs/images/11-gateway-governance.png)
+
 ### Settings — Configure Once, Use Everywhere
 Define tag groups (Environment, Branch), managed private endpoint resource IDs, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
 
 ![Settings](docs/images/06-settings.png)
-
-![Managed Private Endpoints and Compliance Settings](docs/images/00-settings.png)
 
 ### Tenant Overview — Everything at a Glance
 Capacities, workspaces, domains, subdomains, tags, gateways (with contact info and users), connections — all visible in a single dashboard with filters, search, and CSV export.
@@ -76,6 +79,7 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
 | **Developer Workspaces** | Create feature workspaces for developers from a Main template with individual GitHub branches and connections |
 | **Workspace Compliance** | Check compliance for Git, Identity, MPE, Log Analytics, and Domain — with filters and CSV export |
+| **Gateway Governance** | Manage tenant gateway policies, authorized installers, nested Entra groups, and gateway cluster inventory |
 | **Workspace Map** | Visual governance dashboard with domain grouping and PII/Reference Assets classification |
 | **Tenant Overview** | Dashboard with KPIs, filters, and CSV export for workspaces and gateways |
 | **Dual Token Auth** | Automatic handling of Fabric, Power BI, Graph, and GitHub API tokens |
@@ -87,7 +91,10 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 
 ### Prerequisites
 - Python 3.8+
+- PowerShell 7+
+- PowerShell modules: `Az.Accounts`, `Az.Resources`, `DataGateway.Profile`, and `DataGateway`
 - A Microsoft Entra ID account with Fabric workspace admin permissions
+- Appropriate Azure and Power Platform gateway administration permissions
 - A Fabric tenant with at least one capacity
 
 ### Installation
@@ -135,9 +142,14 @@ templates/
   ├── developer_workspaces.html ← Developer workspace provisioning
   ├── tenant_overview.html    ← Tenant Overview dashboard
   ├── workspace_compliance.html ← Compliance checks
+  ├── gateway_governance.html ← Gateway policies and installer management
   ├── modify_workspaces.html  ← Batch workspace operations
   ├── workspace_map.html      ← Visual workspace map
   └── settings.html           ← Settings page
+gateway_session.py             ← Persistent isolated PowerShell session manager
+scripts/
+  ├── azure_identity_host.ps1  ← Azure and Entra device-code session
+  └── gateway_governance_host.ps1 ← Data Gateway device-code session
 ```
 
 ### API Integration
@@ -149,6 +161,11 @@ The app consumes two sets of APIs with separate authentication tokens:
 | **Power BI** | `api.powerbi.com` | `https://analysis.windows.net/powerbi/api/.default` |
 | **Microsoft Graph** | `graph.microsoft.com` | `https://graph.microsoft.com/.default` |
 | **GitHub** | `api.github.com` | Personal Access Token |
+
+Gateway Governance uses two additional, isolated PowerShell sessions to avoid module conflicts:
+
+1. `Connect-AzAccount` authenticates Azure Identity for Entra user and group resolution.
+2. `Login-DataGatewayServiceAccount` authenticates separately for gateway policy and installer administration.
 
 ---
 
