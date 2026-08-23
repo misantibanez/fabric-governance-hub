@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gateway Governance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .session-grid, .policy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 24px; margin-bottom: 24px; }
+        .session-grid .card, .policy-grid .card { margin-bottom: 0; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+        .step-heading { display: flex; align-items: center; gap: 10px; }
+        .step-number { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #F37021; color: white; font-size: 14px; font-weight: 700; }
+        .step-card.locked { opacity: 0.62; }
+        .step-card.locked .step-number { background: #a19f9d; }
+        .card h2 { font-size: 18px; font-weight: 600; color: #6D6E71; }
+        .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+        .muted { color: #6D6E71; font-size: 13px; line-height: 1.5; }
+        .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .badge-ready { background: #dff6dd; color: #107c10; }
+        .badge-waiting { background: #fff4ce; color: #8a6d00; }
+        .badge-off { background: #edebe9; color: #605e5c; }
+        .badge-error { background: #fed9cc; color: #d13438; }
+        button { border: none; border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-primary { background: #F37021; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #d4601a; }
+        .btn-secondary { background: #6D6E71; color: white; }
+        .btn-danger { background: #d13438; color: white; }
+        .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        select, textarea { width: 100%; padding: 8px 10px; border: 1px solid #c8c6c4; border-radius: 4px; font: inherit; background: white; }
+        select:focus, textarea:focus { outline: none; border-color: #F37021; }
+        textarea { min-height: 92px; resize: vertical; font-size: 13px; }
+        label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+        .field { margin-bottom: 14px; }
+        .terminal { background: #252423; color: #f3f2f1; border-radius: 4px; min-height: 74px; max-height: 180px; overflow: auto; padding: 12px; white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; margin-top: 12px; }
+        .notice { display: none; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+        .notice-success { display: block; background: #dff6dd; color: #107c10; border: 1px solid #9bc98f; }
+        .notice-error { display: block; background: #fed9cc; color: #a4262c; border: 1px solid #e5a5a8; }
+        .notice-info { display: block; background: #deecf9; color: #005a9e; border: 1px solid #8bb8df; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+        .table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; text-align: left; padding: 9px 12px; font-size: 12px; color: #6D6E71; position: sticky; top: 0; }
+        td { padding: 9px 12px; font-size: 13px; border-top: 1px solid #edebe9; vertical-align: top; }
+        .policy-value { font-size: 28px; color: #F37021; font-weight: 700; margin: 10px 0 16px; }
+        .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .preview { margin-top: 16px; padding: 14px; background: #faf9f8; border-left: 3px solid #F37021; font-size: 13px; }
+        .preview ul { margin: 8px 0 0 20px; }
+        .empty { padding: 20px; text-align: center; color: #a19f9d; }
+        @media (max-width: 760px) {
+            header { padding: 16px 20px; }
+            .container { padding: 16px; }
+            .session-grid, .policy-grid, .split { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Gateway Governance</h1>
+    </header>
+
+    <main class="container">
+        <div id="notice" class="notice"></div>
+
+        <div class="session-grid">
+            <section class="card">
+                <div class="card-header">
+                    <div class="step-heading">
+                        <span class="step-number">1</span>
+                        <h2>Azure Identity Session</h2>
+                    </div>
+                    <span id="azure-badge" class="badge badge-off">Not connected</span>
+                </div>
+                <p class="muted">Sign in first. This session resolves Entra users and nested groups through <strong>Connect-AzAccount</strong>.</p>
+                <div class="actions" style="margin-top: 14px;">
+                    <button id="connect-azure" class="btn-primary" onclick="connectProvider('azure')">Connect Azure</button>
+                </div>
+                <pre id="azure-output" class="terminal">No Azure authentication activity.</pre>
+            </section>
+
+            <section id="gateway-session-card" class="card step-card locked">
+                <div class="card-header">
+                    <div class="step-heading">
+                        <span class="step-number">2</span>
+                        <h2>Data Gateway Session</h2>
+                    </div>
+                    <span id="gateway-badge" class="badge badge-off">Not connected</span>
+                </div>
+                <p id="gateway-step-description" class="muted">Complete step 1 first. Then sign in for gateway policies and installers through <strong>Login-DataGatewayServiceAccount</strong>.</p>
+                <div class="actions" style="margin-top: 14px;">
+                    <button id="connect-gateway" class="btn-primary" onclick="connectProvider('gateway')">Connect Gateway</button>
+                    <button class="btn-secondary" onclick="disconnectAll()">Disconnect both</button>
+                </div>
+                <pre id="gateway-output" class="terminal">No Data Gateway authentication activity.</pre>
+            </section>
+        </div>
+
+        <div class="policy-grid">
+            <section class="card">
+                <h2>Personal Gateway Policy</h2>
+                <div id="personal-policy-value" class="policy-value">—</div>
+                <div class="field">
+                    <label for="personal-policy">Installation policy</label>
+                    <select id="personal-policy">
+                        <option value="Restricted">Restricted</option>
+                        <option value="Open">Open</option>
+                        <option value="None">None</option>
+                    </select>
+                </div>
+                <button class="btn-primary gateway-action" onclick="applyPolicy('Personal')" disabled>Apply Personal Policy</button>
+            </section>
+
+            <section class="card">
+                <h2>Standard Gateway Policy</h2>
+                <div id="resource-policy-value" class="policy-value">—</div>
+                <div class="field">
+                    <label for="resource-policy">Installation policy</label>
+                    <select id="resource-policy">
+                        <option value="Restricted">Restricted</option>
+                        <option value="Open">Open</option>
+                        <option value="None">None</option>
+                    </select>
+                </div>
+                <button class="btn-primary gateway-action" onclick="applyPolicy('Resource')" disabled>Apply Standard Policy</button>
+            </section>
+        </div>
+
+        <section class="card">
+            <div class="section-header">
+                <div>
+                    <h2>Manage Authorized Standard Gateway Installers</h2>
+                    <p class="muted">Preview direct users and members of Entra groups, including nested groups, before adding them.</p>
+                </div>
+                <button class="btn-secondary gateway-action" onclick="refreshCurrentInstallers()" disabled>Refresh Current Installers</button>
+            </div>
+
+            <div class="split">
+                <div class="field">
+                    <label for="installer-users">Users by UPN</label>
+                    <textarea id="installer-users" placeholder="user1@contoso.com&#10;user2@contoso.com"></textarea>
+                </div>
+                <div class="field">
+                    <label for="installer-groups">Entra groups by display name</label>
+                    <textarea id="installer-groups" placeholder="Gateway Installers"></textarea>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn-secondary azure-action" onclick="resolveInstallers()" disabled>Preview Resolved Users</button>
+                <button class="btn-primary combined-action" onclick="addInstallers()" disabled>Add Resolved Users</button>
+                <button id="clear-preview" class="btn-secondary" onclick="clearPreview()" style="display: none;">Clear Preview</button>
+            </div>
+            <div id="resolve-preview" class="preview" style="display: none;"></div>
+
+            <div style="margin-top: 24px;">
+                <h3>Current Authorized Installers</h3>
+                <p class="muted">This list is read from Data Gateway. Refreshing it does not clear the preview above.</p>
+            </div>
+            <div class="table-wrap" style="margin-top: 20px;">
+                <table>
+                    <thead><tr><th style="width: 42px;"></th><th>Name</th><th>Email / UPN</th><th>Object ID</th><th>Gateway Type</th></tr></thead>
+                    <tbody id="installers-body"><tr><td colspan="5" class="empty">Complete both sign-ins to load current installers.</td></tr></tbody>
+                </table>
+            </div>
+            <button id="remove-installers" class="btn-danger gateway-action" style="margin-top: 14px;" onclick="removeInstallers()" disabled>Remove Selected</button>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <div>
+                    <h2>Gateway Clusters</h2>
+                    <p class="muted">Registered gateway clusters returned by the DataGateway module.</p>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Status</th></tr></thead>
+                    <tbody id="clusters-body"><tr><td colspan="4" class="empty">Connect to the Data Gateway service to load clusters.</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+    let gatewayStateLoaded = false;
+    let gatewayStateLoading = false;
+    let lastAzureConnected = false;
+    let lastGatewayConnected = false;
+
+    function asArray(value) {
+        if (value === null || value === undefined) return [];
+        return Array.isArray(value) ? value : [value];
+    }
+
+    function getValue(object, names, fallback = '') {
+        if (!object || typeof object !== 'object') return fallback;
+        const key = Object.keys(object).find(candidate => names.some(name => candidate.toLowerCase() === name.toLowerCase()));
+        return key ? object[key] : fallback;
+    }
+
+    function setNotice(message, type = 'info') {
+        const notice = document.getElementById('notice');
+        if (!message) {
+            notice.className = 'notice';
+            notice.textContent = '';
+            return;
+        }
+        notice.className = `notice notice-${type}`;
+        notice.textContent = message;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function api(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+        return payload;
+    }
+
+    function renderSession(name, state) {
+        const connected = name === 'azure' ? state.azureConnected : state.gatewayConnected;
+        const badge = document.getElementById(`${name}-badge`);
+        const output = document.getElementById(`${name}-output`);
+        const button = document.getElementById(`connect-${name}`);
+
+        if (state.busy) {
+            badge.className = 'badge badge-waiting';
+            badge.textContent = 'Waiting for sign-in';
+        } else if (connected) {
+            badge.className = 'badge badge-ready';
+            badge.textContent = 'Connected';
+        } else if (state.lastError) {
+            badge.className = 'badge badge-error';
+            badge.textContent = 'Error';
+        } else {
+            badge.className = 'badge badge-off';
+            badge.textContent = 'Not connected';
+        }
+
+        button.disabled = state.busy || connected;
+        const lines = state.logs || [];
+        output.textContent = lines.length ? lines.join('\n') : (state.lastError || `No ${name === 'azure' ? 'Azure' : 'Data Gateway'} authentication activity.`);
+        output.scrollTop = output.scrollHeight;
+        return connected;
+    }
+
+    async function pollStatus() {
+        try {
+            const payload = await api('/gateway-governance/status');
+            const azureConnected = renderSession('azure', payload.azure);
+            const gatewayConnected = renderSession('gateway', payload.gateway);
+            const gatewayConnectButton = document.getElementById('connect-gateway');
+            const gatewayCard = document.getElementById('gateway-session-card');
+            gatewayConnectButton.disabled = !azureConnected || payload.gateway.busy || gatewayConnected;
+            gatewayCard.classList.toggle('locked', !azureConnected);
+            document.getElementById('gateway-step-description').innerHTML = azureConnected
+                ? 'Step 1 complete. Sign in for gateway policies and installers through <strong>Login-DataGatewayServiceAccount</strong>.'
+                : 'Complete step 1 first. Then sign in for gateway policies and installers through <strong>Login-DataGatewayServiceAccount</strong>.';
+            document.querySelectorAll('.azure-action').forEach(button => button.disabled = !azureConnected || payload.azure.busy);
+            document.querySelectorAll('.gateway-action').forEach(button => button.disabled = !gatewayConnected || payload.gateway.busy);
+            document.querySelectorAll('.combined-action').forEach(button => button.disabled = !azureConnected || !gatewayConnected || payload.azure.busy || payload.gateway.busy);
+
+            if (azureConnected && !lastAzureConnected) {
+                setNotice('Step 1 complete. Continue with Data Gateway sign-in.', 'success');
+            }
+            if (gatewayConnected && (!lastGatewayConnected || !gatewayStateLoaded)) {
+                loadGovernanceState();
+            }
+            if (gatewayConnected && !lastGatewayConnected) {
+                setNotice('Both administration sessions are connected.', 'success');
+            }
+            if (!gatewayConnected) gatewayStateLoaded = false;
+            lastAzureConnected = azureConnected;
+            lastGatewayConnected = gatewayConnected;
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    async function connectProvider(provider) {
+        setNotice(`Starting ${provider === 'azure' ? 'Azure' : 'Data Gateway'} device-code authentication...`, 'info');
+        try {
+            await api(`/gateway-governance/connect/${provider}`, { method: 'POST', body: '{}' });
+            pollStatus();
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    async function disconnectAll() {
+        if (!confirm('Disconnect both Gateway Governance sessions?')) return;
+        try {
+            await api('/gateway-governance/disconnect', { method: 'POST', body: '{}' });
+            gatewayStateLoaded = false;
+            setNotice('Gateway Governance sessions disconnected.', 'success');
+            pollStatus();
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    function renderState(state) {
+        const policy = state.policy || {};
+        const personal = getValue(policy, ['PersonalGatewayInstallPolicy', 'personalGatewayInstallPolicy'], 'Unknown');
+        const resource = getValue(policy, ['ResourceGatewayInstallPolicy', 'resourceGatewayInstallPolicy'], 'Unknown');
+        document.getElementById('personal-policy-value').textContent = personal;
+        document.getElementById('resource-policy-value').textContent = resource;
+        if (['None', 'Open', 'Restricted'].includes(String(personal))) document.getElementById('personal-policy').value = personal;
+        if (['None', 'Open', 'Restricted'].includes(String(resource))) document.getElementById('resource-policy').value = resource;
+
+        const installers = asArray(state.installers);
+        const installersBody = document.getElementById('installers-body');
+        installersBody.textContent = '';
+        if (!installers.length) {
+            installersBody.innerHTML = '<tr><td colspan="5" class="empty">No authorized installers returned.</td></tr>';
+        } else {
+            installers.forEach(installer => {
+                const id = getValue(installer, ['PrincipalObjectId', 'PrincipalId', 'ObjectId', 'Id']);
+                const displayName = getValue(installer, ['DisplayName', 'PrincipalName'], 'Unresolved identity');
+                const userPrincipalName = getValue(installer, ['UserPrincipalName'], '—');
+                const type = getValue(installer, ['GatewayType'], 'Resource');
+                const row = document.createElement('tr');
+                const checkboxCell = document.createElement('td');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'installer-check';
+                checkbox.value = id;
+                checkbox.disabled = !id;
+                checkboxCell.appendChild(checkbox);
+                [checkboxCell, displayName, userPrincipalName, id || '—', type].forEach(value => {
+                    if (value instanceof HTMLElement) row.appendChild(value);
+                    else {
+                        const cell = document.createElement('td');
+                        cell.textContent = value;
+                        row.appendChild(cell);
+                    }
+                });
+                installersBody.appendChild(row);
+            });
+        }
+
+        const clusters = asArray(state.clusters);
+        const clustersBody = document.getElementById('clusters-body');
+        clustersBody.textContent = '';
+        if (!clusters.length) {
+            clustersBody.innerHTML = '<tr><td colspan="4" class="empty">No gateway clusters returned.</td></tr>';
+        } else {
+            clusters.forEach(cluster => {
+                const row = document.createElement('tr');
+                const values = [
+                    getValue(cluster, ['Name', 'GatewayClusterName', 'DisplayName'], '—'),
+                    getValue(cluster, ['Id', 'GatewayClusterId'], '—'),
+                    getValue(cluster, ['GatewayType', 'Type'], '—'),
+                    getValue(cluster, ['Status', 'GatewayStatus'], '—')
+                ];
+                values.forEach(value => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                clustersBody.appendChild(row);
+            });
+        }
+    }
+
+    async function loadGovernanceState() {
+        if (gatewayStateLoading) return false;
+        gatewayStateLoading = true;
+        try {
+            const payload = await api('/gateway-governance/state');
+            renderState(payload.state);
+            gatewayStateLoaded = true;
+            return true;
+        } catch (error) {
+            setNotice(error.message, 'error');
+            return false;
+        } finally {
+            gatewayStateLoading = false;
+        }
+    }
+
+    async function refreshCurrentInstallers() {
+        if (await loadGovernanceState()) {
+            setNotice('Current policies, installers, and gateway clusters refreshed.', 'success');
+        }
+    }
+
+    async function applyPolicy(gatewayType) {
+        const policy = document.getElementById(`${gatewayType.toLowerCase()}-policy`).value;
+        if (!confirm(`Set the tenant-wide ${gatewayType} gateway installation policy to ${policy}?`)) return;
+        try {
+            const payload = await api('/gateway-governance/policy', {
+                method: 'POST',
+                body: JSON.stringify({ gatewayType, policy })
+            });
+            renderState(payload.state);
+            setNotice(`${gatewayType} gateway policy changed to ${policy}.`, 'success');
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    function identityPayload() {
+        return {
+            users: document.getElementById('installer-users').value,
+            groups: document.getElementById('installer-groups').value
+        };
+    }
+
+    function renderResolved(resolved) {
+        const preview = document.getElementById('resolve-preview');
+        preview.textContent = '';
+        const users = asArray(resolved.users);
+        const unresolved = asArray(resolved.unresolved);
+        const heading = document.createElement('strong');
+        heading.textContent = `${users.length} user(s) resolved`;
+        preview.appendChild(heading);
+        if (users.length) {
+            const list = document.createElement('ul');
+            users.forEach(user => {
+                const item = document.createElement('li');
+                item.textContent = `${getValue(user, ['userPrincipalName'], getValue(user, ['displayName'], 'Unknown'))} (${getValue(user, ['source'], 'unknown source')})`;
+                list.appendChild(item);
+            });
+            preview.appendChild(list);
+        }
+        if (unresolved.length) {
+            const warning = document.createElement('p');
+            warning.style.marginTop = '10px';
+            warning.style.color = '#a4262c';
+            warning.textContent = `Unresolved: ${unresolved.join(', ')}`;
+            preview.appendChild(warning);
+        }
+        preview.style.display = 'block';
+        document.getElementById('clear-preview').style.display = 'inline-block';
+    }
+
+    function clearPreview() {
+        const preview = document.getElementById('resolve-preview');
+        preview.textContent = '';
+        preview.style.display = 'none';
+        document.getElementById('clear-preview').style.display = 'none';
+    }
+
+    async function resolveInstallers() {
+        try {
+            const payload = await api('/gateway-governance/resolve', {
+                method: 'POST',
+                body: JSON.stringify(identityPayload())
+            });
+            renderResolved(payload.resolved);
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    async function addInstallers() {
+        if (!confirm('Resolve these identities and add every resulting user as a standard gateway installer?')) return;
+        try {
+            const payload = await api('/gateway-governance/installers', {
+                method: 'POST',
+                body: JSON.stringify(identityPayload())
+            });
+            renderResolved(payload.resolved);
+            renderState(payload.result.state);
+            setNotice('Resolved users added to the standard gateway installer list.', 'success');
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    async function removeInstallers() {
+        const principalObjectIds = Array.from(document.querySelectorAll('.installer-check:checked')).map(input => input.value);
+        if (!principalObjectIds.length) {
+            setNotice('Select at least one installer to remove.', 'error');
+            return;
+        }
+        if (!confirm(`Remove ${principalObjectIds.length} selected installer(s)?`)) return;
+        try {
+            const payload = await api('/gateway-governance/installers/remove', {
+                method: 'POST',
+                body: JSON.stringify({ principalObjectIds })
+            });
+            renderState(payload.state);
+            setNotice('Selected installers removed.', 'success');
+        } catch (error) {
+            setNotice(error.message, 'error');
+        }
+    }
+
+    pollStatus();
+    setInterval(pollStatus, 1500);
+    </script>
+</body>
+</html>

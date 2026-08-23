@@ -1,9 +1,10 @@
 import os
 import json
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import requests
 from azure.identity import DeviceCodeCredential
+from gateway_session import GatewayPowerShellSession, GatewaySessionError
 
 load_dotenv()
 
@@ -13,6 +14,16 @@ app.secret_key = os.urandom(24)
 _credential = DeviceCodeCredential(tenant_id=os.environ["FABRIC_TENANT_ID"])
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts")
+
+# Gateway governance intentionally uses separate PowerShell authentication
+# contexts. Neither process shares credentials with the app's Fabric session.
+_gateway_azure_session = GatewayPowerShellSession(
+    os.path.join(SCRIPTS_DIR, "azure_identity_host.ps1")
+)
+_gateway_policy_session = GatewayPowerShellSession(
+    os.path.join(SCRIPTS_DIR, "gateway_governance_host.ps1")
+)
 
 DEFAULT_SETTINGS = {
     "environments": ["Dev", "Int", "Prd"],
@@ -243,9 +254,190 @@ def fetch_connections(headers):
     return connections
 
 
+def parse_identity_list(value):
+    return [
+        item.strip()
+        for item in value.replace(",", "\n").splitlines()
+        if item.strip()
+    ]
+
+
+def gateway_error_response(error, status=400):
+    return jsonify({"ok": False, "error": str(error)}), status
+
+
 @app.route("/")
 def menu():
     return render_template("menu.html")
+
+
+@app.route("/gateway-governance")
+def gateway_governance():
+    return render_template(
+        "gateway_governance.html",
+        tenant_id=os.environ["FABRIC_TENANT_ID"],
+    )
+
+
+@app.route("/gateway-governance/status")
+def gateway_governance_status():
+    return jsonify({
+        "ok": True,
+        "azure": _gateway_azure_session.snapshot(),
+        "gateway": _gateway_policy_session.snapshot(),
+    })
+
+
+@app.route("/gateway-governance/connect/<provider>", methods=["POST"])
+def gateway_governance_connect(provider):
+    tenant_id = os.environ["FABRIC_TENANT_ID"]
+    try:
+        if provider == "azure":
+            request_id = _gateway_azure_session.start_async(
+                "connect_azure", tenantId=tenant_id
+            )
+        elif provider == "gateway":
+            azure_status = _gateway_azure_session.snapshot()
+            if not azure_status["azureConnected"]:
+                return gateway_error_response(
+                    "Complete the Azure Identity sign-in before connecting Data Gateway.",
+                    409,
+                )
+            request_id = _gateway_policy_session.start_async(
+                "connect_gateway", tenantId=tenant_id
+            )
+        else:
+            return gateway_error_response("Unknown authentication provider.", 404)
+        return jsonify({"ok": True, "requestId": request_id}), 202
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/state")
+def gateway_governance_state():
+    try:
+        state = _gateway_policy_session.execute("get_state", timeout=90)
+        installers = state.get("installers") or []
+        principal_ids = [
+            installer.get("PrincipalObjectId")
+            for installer in installers
+            if installer.get("PrincipalObjectId")
+        ]
+        if principal_ids and _gateway_azure_session.snapshot()["azureConnected"]:
+            identities = _gateway_azure_session.execute(
+                "resolve_object_ids",
+                timeout=120,
+                principalObjectIds=principal_ids,
+            )
+            identity_map = {
+                user["id"]: user for user in identities.get("users", [])
+            }
+            for installer in installers:
+                identity = identity_map.get(installer.get("PrincipalObjectId"), {})
+                installer["DisplayName"] = identity.get("displayName")
+                installer["UserPrincipalName"] = identity.get("userPrincipalName")
+        return jsonify({"ok": True, "state": state})
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/policy", methods=["POST"])
+def gateway_governance_policy():
+    data = request.get_json(silent=True) or {}
+    gateway_type = data.get("gatewayType", "")
+    policy = data.get("policy", "")
+    if gateway_type not in ("Personal", "Resource"):
+        return gateway_error_response("Gateway type must be Personal or Resource.")
+    if policy not in ("None", "Open", "Restricted"):
+        return gateway_error_response("Policy must be None, Open, or Restricted.")
+    try:
+        state = _gateway_policy_session.execute(
+            "set_policy",
+            timeout=90,
+            gatewayType=gateway_type,
+            policy=policy,
+        )
+        return jsonify({"ok": True, "state": state})
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/resolve", methods=["POST"])
+def gateway_governance_resolve():
+    data = request.get_json(silent=True) or {}
+    users = parse_identity_list(data.get("users", ""))
+    groups = parse_identity_list(data.get("groups", ""))
+    if not users and not groups:
+        return gateway_error_response("Enter at least one user or group.")
+    try:
+        resolved = _gateway_azure_session.execute(
+            "resolve_principals", timeout=120, users=users, groups=groups
+        )
+        return jsonify({"ok": True, "resolved": resolved})
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/installers", methods=["POST"])
+def gateway_governance_add_installers():
+    data = request.get_json(silent=True) or {}
+    users = parse_identity_list(data.get("users", ""))
+    groups = parse_identity_list(data.get("groups", ""))
+    if not users and not groups:
+        return gateway_error_response("Enter at least one user or group.")
+    try:
+        resolved = _gateway_azure_session.execute(
+            "resolve_principals", timeout=120, users=users, groups=groups
+        )
+        principal_ids = resolved.get("principalObjectIds", [])
+        if not principal_ids:
+            return gateway_error_response(
+                "No users were resolved. The installer list was not changed."
+            )
+        result = _gateway_policy_session.execute(
+            "add_installers",
+            timeout=120,
+            principalObjectIds=principal_ids,
+        )
+        return jsonify({"ok": True, "resolved": resolved, "result": result})
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/installers/remove", methods=["POST"])
+def gateway_governance_remove_installers():
+    data = request.get_json(silent=True) or {}
+    principal_ids = data.get("principalObjectIds") or []
+    if not isinstance(principal_ids, list) or not principal_ids:
+        return gateway_error_response("Select at least one installer to remove.")
+    try:
+        state = _gateway_policy_session.execute(
+            "remove_installers",
+            timeout=120,
+            principalObjectIds=principal_ids,
+        )
+        return jsonify({"ok": True, "state": state})
+    except GatewaySessionError as error:
+        return gateway_error_response(error, 409)
+
+
+@app.route("/gateway-governance/disconnect", methods=["POST"])
+def gateway_governance_disconnect():
+    errors = []
+    for power_shell_session in (_gateway_azure_session, _gateway_policy_session):
+        snapshot = power_shell_session.snapshot()
+        if not snapshot["running"] or snapshot["busy"]:
+            power_shell_session.close()
+            continue
+        try:
+            power_shell_session.execute("disconnect", timeout=20)
+        except GatewaySessionError as error:
+            errors.append(str(error))
+        finally:
+            power_shell_session.close()
+    if errors:
+        return gateway_error_response("; ".join(errors), 409)
+    return jsonify({"ok": True})
 
 
 @app.route("/create-workspace-form")
