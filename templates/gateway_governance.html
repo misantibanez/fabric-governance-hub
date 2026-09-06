@@ -223,6 +223,13 @@
             ...options,
             headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
         });
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const returnTo = `${window.location.pathname}${window.location.search}`;
+            const refreshUrl = `/auth/refresh-session?return_to=${encodeURIComponent(returnTo)}`;
+            window.location.replace(response.redirected ? response.url : refreshUrl);
+            return new Promise(() => {});
+        }
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.error || `Request failed (${response.status})`);
         return payload;

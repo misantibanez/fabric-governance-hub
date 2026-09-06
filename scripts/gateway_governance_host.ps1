@@ -82,7 +82,15 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
 
         switch ($operation) {
             "connect_gateway" {
-                Login-DataGatewayServiceAccount -ForceDeviceCodeAuthentication $true | Out-Null
+                $applicationId = [string]$env:DATA_GATEWAY_CLIENT_ID
+                $clientSecret = [string]$env:DATA_GATEWAY_CLIENT_SECRET
+                $tenantId = [string]$parameters.tenantId
+                if ([string]::IsNullOrWhiteSpace($applicationId) -or [string]::IsNullOrWhiteSpace($clientSecret)) {
+                    Login-DataGatewayServiceAccount -ForceDeviceCodeAuthentication $true | Out-Null
+                } else {
+                    $secureClientSecret = ConvertTo-SecureString $clientSecret -AsPlainText -Force
+                    Login-DataGatewayServiceAccount -ApplicationId $applicationId -ClientSecret $secureClientSecret -Tenant $tenantId | Out-Null
+                }
                 $script:GatewayConnected = $true
                 Write-GatewayResult -RequestId $requestId -Operation $operation -Ok $true -Data $null
             }

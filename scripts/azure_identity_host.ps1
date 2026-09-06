@@ -119,7 +119,14 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             "connect_azure" {
                 $tenantId = [string]$parameters.tenantId
                 if ([string]::IsNullOrWhiteSpace($tenantId)) { throw "Tenant ID is required." }
-                Connect-AzAccount -Tenant $tenantId -UseDeviceAuthentication | Out-Null
+                $accessToken = [string]$parameters.accessToken
+                $graphAccessToken = [string]$parameters.graphAccessToken
+                $accountId = [string]$parameters.accountId
+                if ([string]::IsNullOrWhiteSpace($accessToken) -or [string]::IsNullOrWhiteSpace($graphAccessToken)) {
+                    Connect-AzAccount -Tenant $tenantId -UseDeviceAuthentication | Out-Null
+                } else {
+                    Connect-AzAccount -Tenant $tenantId -AccountId $accountId -AccessToken $accessToken -MicrosoftGraphAccessToken $graphAccessToken -SkipContextPopulation | Out-Null
+                }
                 $context = Get-AzContext
                 $script:AzureConnected = $null -ne $context
                 Write-GatewayResult -RequestId $requestId -Operation $operation -Ok $true -Data ([ordered]@{

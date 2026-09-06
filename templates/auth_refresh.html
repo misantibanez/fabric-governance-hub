@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refreshing session</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f3f2f1; color: #323130; font-family: Georgia, 'Times New Roman', serif; }
+        main { width: min(440px, calc(100% - 40px)); border-top: 4px solid #f37021; padding: 28px 0; }
+        h1 { margin: 0 0 12px; font-size: 28px; }
+        p { margin: 0; color: #605e5c; line-height: 1.5; }
+        a { color: #a64000; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Refreshing your session</h1>
+        <p id="status">Please wait.</p>
+    </main>
+    <script>
+        const returnTo = {{ return_to | tojson }};
+        const status = document.getElementById("status");
+
+        fetch("/.auth/refresh", { credentials: "same-origin" })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Session refresh failed");
+                }
+                window.location.replace(returnTo);
+            })
+            .catch(() => {
+                const signInUrl = `/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(returnTo)}`;
+                status.textContent = "Your session has expired. ";
+                const link = document.createElement("a");
+                link.href = signInUrl;
+                link.textContent = "Sign in again";
+                status.appendChild(link);
+                status.append(".");
+            });
+    </script>
+</body>
+</html>
