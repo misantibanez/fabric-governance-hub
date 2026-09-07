@@ -9,6 +9,7 @@ import msal
 import requests
 from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
+from mpe_validation import MpeValidationError, mpe_audit_record, validate_mpe_configuration
 from settings_repository import SettingsConflictError, create_settings_repository
 
 load_dotenv()
@@ -65,6 +66,34 @@ _settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTING
 
 def load_settings():
     return _settings_repository.load().settings
+
+
+def preflight_mpe_configuration(settings, include_cognitive_services):
+    return validate_mpe_configuration(
+        settings,
+        include_cognitive_services,
+        {"Authorization": f"Bearer {get_azure_token()}"},
+        requests.get,
+    )
+
+
+def create_managed_private_endpoints(workspace_id, workspace_name, targets, fabric_headers):
+    errors = []
+    url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/managedPrivateEndpoints"
+    headers = {**fabric_headers, "Content-Type": "application/json"}
+    for target in targets:
+        prefix = "kv" if target.subresource_type == "vault" else "cs"
+        response = requests.post(url, headers=headers, json={
+            "name": f"mpe-{prefix}-{workspace_name}",
+            "targetPrivateLinkResourceId": target.resource_id,
+            "targetSubresourceType": target.subresource_type,
+            "requestMessage": f"Fabric {workspace_name}",
+        })
+        if response.status_code != 201:
+            errors.append(
+                f"MPE {target.name}: {response.status_code} - {response.text[:200]}"
+            )
+    return errors
 
 
 def get_downstream_token(scope):
@@ -637,12 +666,27 @@ def create_tag():
 
 @app.route("/create-workspace", methods=["POST"])
 def create_workspace():
-    fabric_headers = get_headers()
-    pbi_headers = get_powerbi_headers()
     name = request.form["name"].strip()
     description = request.form.get("description", "").strip()
     capacity_id = request.form["capacity_id"]
     domain_id = request.form.get("domain_id", "")
+    settings = load_settings()
+    try:
+        mpe_targets = preflight_mpe_configuration(
+            settings, bool(request.form.get("mpe_cognitive_services"))
+        )
+    except MpeValidationError as error:
+        for message in error.messages:
+            flash(message, "mpe-error")
+        return redirect(url_for("create_workspace_form"))
+    app.logger.info(
+        "MPE preflight passed for workspace %s: %s",
+        name,
+        json.dumps(mpe_audit_record(mpe_targets)),
+    )
+
+    fabric_headers = get_headers()
+    pbi_headers = get_powerbi_headers()
 
     # 1. Create workspace (Fabric API)
     body = {"displayName": name}
@@ -823,30 +867,9 @@ def create_workspace():
             item_errors.append(f"Lakehouse {lakehouse_name}: {resp_lh.status_code} - {resp_lh.text[:150]}")
 
     # 8. Create managed private endpoints
-    mpe_errors = []
-    settings = load_settings()
-    mpe_url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/managedPrivateEndpoints"
-    mpe_headers = {**fabric_headers, "Content-Type": "application/json"}
-    kv_resource_id = settings.get("mpe_keyvault_resource_id", "")
-    if kv_resource_id:
-        resp_mpe = requests.post(mpe_url, headers=mpe_headers, json={
-            "name": f"mpe-kv-{name}",
-            "targetPrivateLinkResourceId": kv_resource_id,
-            "targetSubresourceType": "vault",
-            "requestMessage": f"Fabric {name}",
-        })
-        if resp_mpe.status_code != 201:
-            mpe_errors.append(f"MPE Key Vault: {resp_mpe.status_code} - {resp_mpe.text[:200]}")
-    cs_resource_id = settings.get("mpe_cognitive_services_resource_id", "")
-    if cs_resource_id and request.form.get("mpe_cognitive_services"):
-        resp_mpe = requests.post(mpe_url, headers=mpe_headers, json={
-            "name": f"mpe-cs-{name}",
-            "targetPrivateLinkResourceId": cs_resource_id,
-            "targetSubresourceType": "account",
-            "requestMessage": f"Fabric {name}",
-        })
-        if resp_mpe.status_code != 201:
-            mpe_errors.append(f"MPE Cognitive Services: {resp_mpe.status_code} - {resp_mpe.text[:200]}")
+    mpe_errors = create_managed_private_endpoints(
+        workspace_id, name, mpe_targets, fabric_headers
+    )
 
     # 9. Connect to GitHub (optional)
     git_repo_url = request.form.get("git_repo_url", "").strip().rstrip("/")
@@ -1202,6 +1225,15 @@ def developer_workspaces():
 @app.route("/create-developer-workspaces", methods=["POST"])
 def create_developer_workspaces():
     from flask import jsonify
+    try:
+        mpe_targets = preflight_mpe_configuration(load_settings(), False)
+    except MpeValidationError as error:
+        return jsonify({
+            "ok": False,
+            "error": " ".join(error.messages),
+            "settings_url": url_for("settings_page", _anchor="managed-private-endpoints"),
+        }), 400
+
     dev_count = int(request.form.get("dev_count", 0))
     developers = []
     for i in range(1, dev_count + 1):
@@ -1224,6 +1256,7 @@ def create_developer_workspaces():
             "created_at": now,
             "main_ws_id": request.form["main_workspace_id"],
             "developers": developers,
+            "mpe_targets": mpe_targets,
         }
     session["dev_job_id"] = job_id
     return jsonify({"ok": True})
@@ -1246,9 +1279,9 @@ def dev_ws_stream():
     def generate():
         fabric_headers = get_headers()
         pbi_headers = get_powerbi_headers()
-        settings = load_settings()
         main_ws_id = job["main_ws_id"]
         developers = job["developers"]
+        mpe_targets = job["mpe_targets"]
 
         resp = requests.get(
             f"https://api.fabric.microsoft.com/v1/workspaces/{main_ws_id}",
@@ -1263,6 +1296,12 @@ def dev_ws_stream():
         main_tags = main_ws.get("tags", [])
         capacity_id = main_ws.get("capacityId", "")
         domain_id = main_ws.get("domainId", "")
+
+        app.logger.info(
+            "MPE preflight passed for developer workspaces based on %s: %s",
+            main_name,
+            json.dumps(mpe_audit_record(mpe_targets)),
+        )
 
         yield f"data: Starting creation for {len(developers)} developer(s) from workspace '{main_name}'\n\n"
 
@@ -1441,15 +1480,15 @@ def dev_ws_stream():
             yield f"data: [{alias}]   ✓ Role assignments replicated\n\n"
 
             # 3f. MPEs
-            kv_resource_id = settings.get("mpe_keyvault_resource_id", "")
-            if kv_resource_id:
-                requests.post(
-                    f"https://api.fabric.microsoft.com/v1/workspaces/{dev_ws_id}/managedPrivateEndpoints",
-                    headers={**fabric_headers, "Content-Type": "application/json"},
-                    json={"name": f"mpe-kv-{ws_name}", "targetPrivateLinkResourceId": kv_resource_id,
-                          "targetSubresourceType": "vault", "requestMessage": f"Fabric {ws_name}"},
-                )
-                yield f"data: [{alias}]   ✓ MPE Key Vault created\n\n"
+            mpe_errors = create_managed_private_endpoints(
+                dev_ws_id, ws_name, mpe_targets, fabric_headers
+            )
+            if mpe_errors:
+                dev_errors.extend(mpe_errors)
+                for mpe_error in mpe_errors:
+                    yield f"data: [{alias}]   ERROR: {mpe_error}\n\n"
+            else:
+                yield f"data: [{alias}]   ✓ Managed private endpoints created\n\n"
 
             # 3g. Log Analytics
             if log_analytics_config:
