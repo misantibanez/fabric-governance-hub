@@ -15,6 +15,7 @@ param deployedBy string
 param createdAt string
 param deployerObjectId string
 param resourceGroupName string = 'rg-fb-governance-app'
+param adminVirtualNetworkId string = ''
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 param fabricTenantId string = tenant().tenantId
 param entraWebClientId string = ''
@@ -103,6 +104,17 @@ module keyVault './modules/key-vault.bicep' = {
   }
 }
 
+module appConfiguration './modules/app-configuration.bicep' = {
+  name: 'app-configuration'
+  scope: rg
+  params: {
+    configurationStoreName: 'appcs-fabric-gov-dev-3d9c'
+    location: location
+    publicNetworkAccess: 'Disabled'
+    tags: tags
+  }
+}
+
 module tokenStorage './modules/token-storage.bicep' = {
   name: 'token-storage'
   scope: rg
@@ -143,9 +155,11 @@ module privateLink './modules/private-link.bicep' = {
   params: {
     location: location
     virtualNetworkId: virtualNetwork.outputs.id
+    adminVirtualNetworkId: adminVirtualNetworkId
     privateEndpointsSubnetId: virtualNetwork.outputs.privateEndpointsSubnetId
     containerRegistryId: containerRegistry.outputs.id
     keyVaultId: keyVault.outputs.id
+    appConfigurationId: appConfiguration.outputs.id
     tokenStorageAccountId: tokenStorage.outputs.id
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
     applicationInsightsId: applicationInsights.outputs.id
@@ -158,13 +172,18 @@ module containerApp './modules/container-app.bicep' = {
   scope: rg
   dependsOn: [
     keyVaultSecrets
+    privateLink
+    roleAssignments
   ]
   params: {
     containerAppName: 'ca-fabric-gov-dev-3d9c-vnet'
     location: location
     managedEnvironmentId: containerEnvironment.outputs.id
     managedIdentityId: managedIdentity.outputs.id
+    managedIdentityClientId: managedIdentity.outputs.clientId
     registryLoginServer: containerRegistry.outputs.loginServer
+    appConfigurationEndpoint: appConfiguration.outputs.endpoint
+    appConfigurationLabel: environmentName
     tokenStoreSasUrl: tokenStoreSasUrl
     applicationInsightsConnectionString: applicationInsights.outputs.connectionString
     containerImage: containerImage
@@ -192,6 +211,7 @@ module roleAssignments './modules/role-assignments.bicep' = {
   params: {
     registryName: 'crfabricgovdev3d9c'
     keyVaultName: 'kv-fabric-gov-dev-3d9c'
+    configurationStoreName: appConfiguration.outputs.name
     appPrincipalId: managedIdentity.outputs.principalId
     deployerObjectId: deployerObjectId
   }

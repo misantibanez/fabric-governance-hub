@@ -1,8 +1,10 @@
 param location string
 param virtualNetworkId string
+param adminVirtualNetworkId string = ''
 param privateEndpointsSubnetId string
 param containerRegistryId string
 param keyVaultId string
+param appConfigurationId string
 param tokenStorageAccountId string
 param logAnalyticsWorkspaceId string
 param applicationInsightsId string
@@ -16,6 +18,12 @@ resource acrPrivateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
 
 resource keyVaultPrivateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
   name: 'privatelink.vaultcore.azure.net'
+  location: 'global'
+  tags: tags
+}
+
+resource appConfigurationPrivateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
+  name: 'privatelink.azconfig.io'
   location: 'global'
   tags: tags
 }
@@ -73,6 +81,32 @@ resource keyVaultVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks
     registrationEnabled: false
     virtualNetwork: {
       id: virtualNetworkId
+    }
+  }
+}
+
+resource appConfigurationVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
+  parent: appConfigurationPrivateDnsZone
+  name: 'link-fabric-governance-vnet'
+  location: 'global'
+  tags: tags
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: virtualNetworkId
+    }
+  }
+}
+
+resource appConfigurationAdminVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = if (!empty(adminVirtualNetworkId)) {
+  parent: appConfigurationPrivateDnsZone
+  name: 'link-fabric-governance-admin-vnet'
+  location: 'global'
+  tags: tags
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: adminVirtualNetworkId
     }
   }
 }
@@ -210,6 +244,43 @@ resource keyVaultPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/private
         name: 'vault'
         properties: {
           privateDnsZoneId: keyVaultPrivateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
+resource appConfigurationPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+  name: 'pe-appcs-fabric-gov-dev-3d9c'
+  location: location
+  tags: tags
+  properties: {
+    subnet: {
+      id: privateEndpointsSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'configuration-store'
+        properties: {
+          privateLinkServiceId: appConfigurationId
+          groupIds: [
+            'configurationStores'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource appConfigurationPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+  parent: appConfigurationPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'configuration-store'
+        properties: {
+          privateDnsZoneId: appConfigurationPrivateDnsZone.id
         }
       }
     ]

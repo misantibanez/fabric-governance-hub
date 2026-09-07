@@ -9,6 +9,7 @@ import msal
 import requests
 from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
+from settings_repository import SettingsConflictError, create_settings_repository
 
 load_dotenv()
 
@@ -59,18 +60,11 @@ DEFAULT_SETTINGS = {
     "mpe_keyvault_resource_id": "",
     "compliance_domain_required_tag": "DHUB",
 }
+_settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTINGS)
 
 
 def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    return DEFAULT_SETTINGS.copy()
-
-
-def save_settings(settings):
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
+    return _settings_repository.load().settings
 
 
 def get_downstream_token(scope):
@@ -1620,11 +1614,18 @@ def settings_page():
             "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
             "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
-        save_settings(settings)
+        expected_etag = request.form.get("settings_etag") or None
+        try:
+            _settings_repository.save(settings, expected_etag)
+        except SettingsConflictError:
+            current = _settings_repository.load()
+            flash("Settings changed since this page was opened. Review the latest values and try again.", "error")
+            return render_template("settings.html", settings=current.settings, settings_etag=current.etag), 409
         flash("Settings saved.", "success")
         return redirect(url_for("settings_page"))
 
-    return render_template("settings.html", settings=load_settings())
+    snapshot = _settings_repository.load()
+    return render_template("settings.html", settings=snapshot.settings, settings_etag=snapshot.etag)
 
 
 if __name__ == "__main__":
