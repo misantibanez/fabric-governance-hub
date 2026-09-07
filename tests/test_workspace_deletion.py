@@ -146,6 +146,33 @@ class WorkspaceDeletionTests(unittest.TestCase):
         self.assertEqual(1, len(delete_calls))
         self.assertIn("managedPrivateEndpoints/mpe-1", delete_calls[0])
 
+    def test_waits_with_bounded_backoff_for_eventual_endpoint_removal(self):
+        sleeps = []
+        delete = RequestSequence([FakeResponse(200), FakeResponse(204)])
+        get = RequestSequence([
+            FakeResponse(200, {"displayName": "Workspace One"}),
+            FakeResponse(200, {"value": [{"id": "mpe-1", "name": "Key Vault"}]}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(200, {"id": "mpe-1"}),
+            FakeResponse(404),
+            FakeResponse(200, {"value": []}),
+        ])
+
+        completed = execute_workspace_deletions(
+            ["ws-1"], {}, get, delete, sleeps.append
+        )
+
+        self.assertEqual(("ws-1",), completed)
+        self.assertEqual([1, 2, 4, 8, 10, 10], sleeps)
+        self.assertEqual(
+            "https://api.fabric.microsoft.com/v1/workspaces/ws-1",
+            delete.calls[-1],
+        )
+
     def test_retries_throttled_delete_and_treats_404_as_absent(self):
         sleeps = []
         delete = RequestSequence([

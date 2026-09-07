@@ -6,6 +6,7 @@ import requests
 
 
 FABRIC_API_ROOT = "https://api.fabric.microsoft.com/v1"
+DEFAULT_VERIFICATION_ATTEMPTS = 14
 
 
 class WorkspaceDeletionError(RuntimeError):
@@ -177,9 +178,10 @@ def _verify_endpoint_absent(
                 f"{workspace_id}: {response.status_code} - {_response_detail(response)}"
             )
         if attempt + 1 < verification_attempts:
-            sleep(1)
+            sleep(min(2 ** attempt, 10))
     raise WorkspaceDeletionError(
-        f"Managed private endpoint {endpoint_id} still exists in workspace {workspace_id}."
+        f"Managed private endpoint {endpoint_id} still exists in workspace {workspace_id} "
+        "after the verification window. The workspace was not deleted; retry later."
     )
 
 
@@ -189,7 +191,7 @@ def execute_workspace_deletions(
     request_get=requests.get,
     request_delete=requests.delete,
     sleep=time.sleep,
-    verification_attempts=5,
+    verification_attempts=DEFAULT_VERIFICATION_ATTEMPTS,
     audit=None,
 ):
     previews = discover_workspace_deletions(
