@@ -1,0 +1,36 @@
+name: Project status automation
+
+on:
+  create:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: project-status-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  update-project-status:
+    if: >-
+      github.event_name == 'create' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Check out automation
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update roadmap status
+        env:
+          PROJECT_V2_TOKEN: ${{ secrets.PROJECT_V2_TOKEN }}
+          PROJECT_ID: PVT_kwHOBYLMW84BiqDm
+          PROJECT_STATUS_FIELD_ID: PVTSSF_lAHOBYLMW84BiqDmzhhhOek
+          PROJECT_STATUS_IN_PROGRESS_ID: 25f64997
+          PROJECT_STATUS_IN_REVIEW_ID: 08c952c3
+          PROJECT_STATUS_DONE_ID: 479230ce
+        run: node .github/scripts/update-project-status.mjs
