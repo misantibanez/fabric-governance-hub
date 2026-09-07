@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 settings.json
+.copilot-azure/
+infra/main.json
+infra/main.parameters.json

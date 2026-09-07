@@ -1,20 +1,48 @@
 import os
 import json
+import secrets
+import threading
+import time
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+import msal
 import requests
 from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
+from settings_repository import SettingsConflictError, create_settings_repository
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(24)
 
-_credential = DeviceCodeCredential(tenant_id=os.environ["FABRIC_TENANT_ID"])
+_tenant_id = os.environ["FABRIC_TENANT_ID"]
+_entra_client_id = os.environ.get("ENTRA_WEB_CLIENT_ID")
+_entra_client_secret = os.environ.get("ENTRA_WEB_CLIENT_SECRET")
+_hosted_auth_enabled = bool(_entra_client_id and _entra_client_secret)
+_credential = None if _hosted_auth_enabled else DeviceCodeCredential(tenant_id=_tenant_id)
+_confidential_client = None
+
+
+class ExpiredUserAssertionError(RuntimeError):
+    pass
+
+
+def get_confidential_client():
+    global _confidential_client
+    if _confidential_client is None:
+        _confidential_client = msal.ConfidentialClientApplication(
+            _entra_client_id,
+            authority=f"https://login.microsoftonline.com/{_tenant_id}",
+            client_credential=_entra_client_secret,
+        )
+    return _confidential_client
 
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts")
+DEV_JOB_TTL_SECONDS = 300
+_dev_jobs = {}
+_dev_jobs_lock = threading.Lock()
 
 # Gateway governance intentionally uses separate PowerShell authentication
 # contexts. Neither process shares credentials with the app's Fabric session.
@@ -32,30 +60,66 @@ DEFAULT_SETTINGS = {
     "mpe_keyvault_resource_id": "",
     "compliance_domain_required_tag": "DHUB",
 }
+_settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTINGS)
 
 
 def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    return DEFAULT_SETTINGS.copy()
+    return _settings_repository.load().settings
 
 
-def save_settings(settings):
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=2)
+def get_downstream_token(scope):
+    if not _hosted_auth_enabled:
+        return _credential.get_token(scope).token
+
+    user_assertion = request.headers.get("X-MS-TOKEN-AAD-ACCESS-TOKEN")
+    if not user_assertion:
+        raise RuntimeError("Container Apps authentication did not provide a user access token.")
+
+    result = get_confidential_client().acquire_token_on_behalf_of(
+        user_assertion=user_assertion,
+        scopes=[scope],
+    )
+    if "access_token" not in result:
+        description = result.get("error_description") or result.get("error") or "unknown error"
+        if "AADSTS500133" in description:
+            raise ExpiredUserAssertionError(description)
+        raise RuntimeError(f"Unable to acquire a delegated token: {description}")
+    return result["access_token"]
+
+
+def safe_return_path(value):
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return url_for("menu")
+    return value
+
+
+@app.errorhandler(ExpiredUserAssertionError)
+def refresh_expired_user_assertion(_error):
+    return redirect(url_for("refresh_auth_session", return_to=request.full_path))
+
+
+@app.route("/auth/refresh-session")
+def refresh_auth_session():
+    return render_template(
+        "auth_refresh.html",
+        return_to=safe_return_path(request.args.get("return_to")),
+    )
 
 
 def get_token():
-    return _credential.get_token("https://api.fabric.microsoft.com/.default").token
+    return get_downstream_token("https://api.fabric.microsoft.com/.default")
 
 
 def get_graph_token():
-    return _credential.get_token("https://graph.microsoft.com/.default").token
+    return get_downstream_token("https://graph.microsoft.com/.default")
 
 
 def get_powerbi_token():
-    return _credential.get_token("https://analysis.windows.net/powerbi/api/.default").token
+    return get_downstream_token("https://analysis.windows.net/powerbi/api/.default")
+
+
+def get_azure_token():
+    return get_downstream_token("https://management.azure.com/.default")
 
 
 def get_headers():
@@ -293,9 +357,14 @@ def gateway_governance_connect(provider):
     tenant_id = os.environ["FABRIC_TENANT_ID"]
     try:
         if provider == "azure":
-            request_id = _gateway_azure_session.start_async(
-                "connect_azure", tenantId=tenant_id
-            )
+            parameters = {"tenantId": tenant_id}
+            if _hosted_auth_enabled:
+                parameters.update(
+                    accessToken=get_azure_token(),
+                    graphAccessToken=get_graph_token(),
+                    accountId=request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", "hosted-user"),
+                )
+            request_id = _gateway_azure_session.start_async("connect_azure", **parameters)
         elif provider == "gateway":
             azure_status = _gateway_azure_session.snapshot()
             if not azure_status["azureConnected"]:
@@ -1133,7 +1202,6 @@ def developer_workspaces():
 @app.route("/create-developer-workspaces", methods=["POST"])
 def create_developer_workspaces():
     from flask import jsonify
-    # Save form data to session for the SSE endpoint to consume
     dev_count = int(request.form.get("dev_count", 0))
     developers = []
     for i in range(1, dev_count + 1):
@@ -1142,17 +1210,33 @@ def create_developer_workspaces():
         gh_pat = request.form.get(f"dev_github_pat_{i}", "").strip()
         if alias and gh_user and gh_pat:
             developers.append({"alias": alias, "gh_user": gh_user, "gh_pat": gh_pat})
-    session["dev_job"] = {
-        "main_ws_id": request.form["main_workspace_id"],
-        "developers": developers,
-    }
+    now = time.monotonic()
+    job_id = secrets.token_urlsafe(32)
+    with _dev_jobs_lock:
+        expired_job_ids = [
+            stored_job_id
+            for stored_job_id, stored_job in _dev_jobs.items()
+            if now - stored_job["created_at"] > DEV_JOB_TTL_SECONDS
+        ]
+        for expired_job_id in expired_job_ids:
+            _dev_jobs.pop(expired_job_id, None)
+        _dev_jobs[job_id] = {
+            "created_at": now,
+            "main_ws_id": request.form["main_workspace_id"],
+            "developers": developers,
+        }
+    session["dev_job_id"] = job_id
     return jsonify({"ok": True})
 
 
 @app.route("/dev-ws-stream")
 def dev_ws_stream():
     from flask import Response, stream_with_context
-    job = session.pop("dev_job", None)
+    job_id = session.pop("dev_job_id", None)
+    with _dev_jobs_lock:
+        job = _dev_jobs.pop(job_id, None) if job_id else None
+    if job and time.monotonic() - job["created_at"] > DEV_JOB_TTL_SECONDS:
+        job = None
     if not job:
         def empty():
             yield "data: ERROR: No job data found\n\n"
@@ -1530,11 +1614,18 @@ def settings_page():
             "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
             "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
-        save_settings(settings)
+        expected_etag = request.form.get("settings_etag") or None
+        try:
+            _settings_repository.save(settings, expected_etag)
+        except SettingsConflictError:
+            current = _settings_repository.load()
+            flash("Settings changed since this page was opened. Review the latest values and try again.", "error")
+            return render_template("settings.html", settings=current.settings, settings_etag=current.etag), 409
         flash("Settings saved.", "success")
         return redirect(url_for("settings_page"))
 
-    return render_template("settings.html", settings=load_settings())
+    snapshot = _settings_repository.load()
+    return render_template("settings.html", settings=snapshot.settings, settings_etag=snapshot.etag)
 
 
 if __name__ == "__main__":
