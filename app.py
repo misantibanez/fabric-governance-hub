@@ -11,6 +11,11 @@ from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
 from mpe_validation import MpeValidationError, mpe_audit_record, validate_mpe_configuration
 from settings_repository import SettingsConflictError, create_settings_repository
+from workspace_deletion import (
+    WorkspaceDeletionError,
+    discover_workspace_deletions,
+    execute_workspace_deletions,
+)
 
 load_dotenv()
 
@@ -42,6 +47,7 @@ def get_confidential_client():
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts")
 DEV_JOB_TTL_SECONDS = 300
+DELETE_CONFIRMATION_TTL_SECONDS = 600
 _dev_jobs = {}
 _dev_jobs_lock = threading.Lock()
 
@@ -232,6 +238,34 @@ def fetch_workspaces(fabric_headers):
         workspaces.extend(data.get("value", []))
         url = data.get("continuationUri")
     return workspaces
+
+
+def enrich_workspaces(workspaces, fabric_headers, deleted_ids=()):
+    enriched = []
+    deleted_ids = set(deleted_ids)
+    for workspace in workspaces:
+        if workspace["id"] in deleted_ids:
+            continue
+        try:
+            response = requests.get(
+                f"https://api.fabric.microsoft.com/v1/workspaces/{workspace['id']}",
+                headers=fabric_headers,
+            )
+        except requests.RequestException as error:
+            print(
+                f"[WARN] fetch_workspace_detail failed for workspace "
+                f"{workspace['id']}: {type(error).__name__}"
+            )
+            enriched.append(workspace)
+            continue
+        if response.status_code == 200:
+            detail = response.json()
+            workspace["tags"] = detail.get("tags", [])
+            workspace["domainId"] = detail.get("domainId")
+            enriched.append(workspace)
+        elif response.status_code != 404:
+            enriched.append(workspace)
+    return enriched
 
 
 # --- Fabric admin APIs (use Fabric token) ---
@@ -963,21 +997,7 @@ def workspace_map():
     domains_raw = fetch_domains(fabric_headers)
     tags = fetch_tags(fabric_headers)
 
-    # Enrich workspaces with tags and domainId
-    enriched = []
-    for ws in workspaces:
-        resp = requests.get(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{ws['id']}",
-            headers=fabric_headers,
-        )
-        if resp.status_code == 200:
-            detail = resp.json()
-            ws["tags"] = detail.get("tags", [])
-            ws["domainId"] = detail.get("domainId")
-            enriched.append(ws)
-        elif resp.status_code != 404:
-            enriched.append(ws)
-    workspaces = enriched
+    workspaces = enrich_workspaces(workspaces, fabric_headers)
 
     domain_map = {d["id"]: d["displayName"] for d in domains_raw}
     capacity_map = {c["id"]: c.get("displayName") or c.get("name", "") for c in capacities}
@@ -1013,26 +1033,8 @@ def modify_workspaces():
     domains_raw = fetch_domains(fabric_headers)
     tags = fetch_tags(fabric_headers)
 
-    # Enrich each workspace with tags and domainId; filter out deleted ones
     deleted_ids = set(session.pop("deleted_workspace_ids", []))
-    enriched = []
-    for ws in workspaces:
-        if ws["id"] in deleted_ids:
-            continue
-        resp = requests.get(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{ws['id']}",
-            headers=fabric_headers,
-        )
-        if resp.status_code == 200:
-            detail = resp.json()
-            ws["tags"] = detail.get("tags", [])
-            ws["domainId"] = detail.get("domainId")
-            enriched.append(ws)
-        elif resp.status_code == 404:
-            continue
-        else:
-            enriched.append(ws)
-    workspaces = enriched
+    workspaces = enrich_workspaces(workspaces, fabric_headers, deleted_ids)
 
     domain_map = {d["id"]: d["displayName"] for d in domains_raw}
     for d in domains_raw:
@@ -1041,6 +1043,8 @@ def modify_workspaces():
 
     domains = [d for d in domains_raw if not d.get("parentDomainId")]
     subdomains = [d for d in domains_raw if d.get("parentDomainId")]
+    deletion_review_token = secrets.token_urlsafe(32)
+    session["workspace_delete_review_token"] = deletion_review_token
 
     return render_template(
         "modify_workspaces.html",
@@ -1050,6 +1054,7 @@ def modify_workspaces():
         subdomains=subdomains,
         tags=tags,
         domain_map=domain_map,
+        deletion_review_token=deletion_review_token,
     )
 
 
@@ -1146,28 +1151,118 @@ def batch_assign_capacity():
     return redirect(url_for("modify_workspaces"))
 
 
+def parse_selected_workspace_ids(raw_value):
+    try:
+        workspace_ids = json.loads(raw_value or "[]")
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("The workspace selection is invalid.") from error
+    if not isinstance(workspace_ids, list) or not workspace_ids or len(workspace_ids) > 100:
+        raise ValueError("Select between 1 and 100 workspaces.")
+    normalized = []
+    for workspace_id in workspace_ids:
+        if not isinstance(workspace_id, str) or not workspace_id.strip():
+            raise ValueError("The workspace selection contains an invalid ID.")
+        workspace_id = workspace_id.strip()
+        if workspace_id not in normalized:
+            normalized.append(workspace_id)
+    return normalized
+
+
+def workspace_deletion_audit(event, workspace, endpoint, status_code):
+    record = {
+        "event": event,
+        "actor": request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", "local-user"),
+        "workspace_id": workspace.id,
+        "workspace_name": workspace.name,
+        "http_status": status_code,
+    }
+    if endpoint:
+        record.update({
+            "managed_private_endpoint_id": endpoint.id,
+            "managed_private_endpoint_name": endpoint.name,
+        })
+    app.logger.info("Workspace deletion audit: %s", json.dumps(record))
+
+
 @app.route("/modify-workspaces/delete", methods=["POST"])
-def batch_delete_workspaces():
-    fabric_headers = get_headers()
-    workspace_ids = json.loads(request.form["workspace_ids"])
-
-    errors = []
-    for ws_id in workspace_ids:
-        resp = requests.delete(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{ws_id}",
-            headers=fabric_headers,
+def preview_workspace_deletion():
+    expected_token = session.pop("workspace_delete_review_token", "")
+    submitted_token = request.form.get("review_token", "")
+    if not expected_token or not submitted_token or not secrets.compare_digest(
+        expected_token, submitted_token
+    ):
+        session.pop("workspace_delete_confirmation", None)
+        flash("The deletion review request is invalid or expired. Select the workspaces again.", "error")
+        return redirect(url_for("modify_workspaces"))
+    try:
+        workspace_ids = parse_selected_workspace_ids(request.form.get("workspace_ids"))
+        previews = discover_workspace_deletions(
+            workspace_ids,
+            get_headers(),
+            request_get=requests.get,
+            sleep=time.sleep,
         )
-        if resp.status_code in (200, 204, 404):
-            continue
-        errors.append(f"{ws_id}: {resp.status_code}")
+    except (ValueError, WorkspaceDeletionError) as error:
+        session.pop("workspace_delete_confirmation", None)
+        flash(str(error), "error")
+        return redirect(url_for("modify_workspaces"))
 
-    deleted = [ws_id for ws_id in workspace_ids if ws_id not in [e.split(":")[0] for e in errors]]
-    session["deleted_workspace_ids"] = deleted
+    confirmation_token = secrets.token_urlsafe(32)
+    session["workspace_delete_confirmation"] = {
+        "token": confirmation_token,
+        "workspace_ids": workspace_ids,
+        "created_at": int(time.time()),
+    }
+    return render_template(
+        "confirm_workspace_deletion.html",
+        previews=previews,
+        confirmation_token=confirmation_token,
+        endpoint_count=sum(len(item.managed_private_endpoints) for item in previews),
+    )
 
-    if errors:
-        flash(f"Deleted with errors: {'; '.join(errors)}", "error")
+
+@app.route("/modify-workspaces/delete/confirm", methods=["POST"])
+def confirm_workspace_deletion():
+    confirmation = session.pop("workspace_delete_confirmation", None)
+    submitted_token = request.form.get("confirmation_token", "")
+    is_expired = not confirmation or (
+        int(time.time()) - confirmation.get("created_at", 0) > DELETE_CONFIRMATION_TTL_SECONDS
+    )
+    token_matches = bool(
+        confirmation
+        and submitted_token
+        and secrets.compare_digest(submitted_token, confirmation.get("token", ""))
+    )
+    if is_expired or not token_matches or request.form.get("confirmed") != "yes":
+        flash("Deletion confirmation is missing or expired. Review the workspaces again.", "error")
+        return redirect(url_for("modify_workspaces"))
+
+    workspace_ids = confirmation["workspace_ids"]
+    try:
+        deleted = execute_workspace_deletions(
+            workspace_ids,
+            get_headers(),
+            request_get=requests.get,
+            request_delete=requests.delete,
+            sleep=time.sleep,
+            audit=workspace_deletion_audit,
+        )
+    except WorkspaceDeletionError as error:
+        session["deleted_workspace_ids"] = list(error.completed_workspace_ids)
+        app.logger.warning(
+            "Workspace deletion stopped for actor %s after %s completed workspace(s): %s",
+            request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", "local-user"),
+            len(error.completed_workspace_ids),
+            error,
+        )
+        flash(f"Deletion stopped: {error}", "error")
     else:
-        flash(f"Deleted {len(workspace_ids)} workspace(s).", "success")
+        session["deleted_workspace_ids"] = list(deleted)
+        flash(
+            f"Deleted {len(deleted)} workspace(s) after removing and verifying all managed "
+            "private endpoints.",
+            "success",
+        )
     return redirect(url_for("modify_workspaces"))
 
 

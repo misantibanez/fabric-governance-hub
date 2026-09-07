@@ -25,6 +25,8 @@ Everything your workspace needs, configured from the start: capacity, domain, ta
 ### Modify Workspaces — Batch Operations at Scale
 Select multiple workspaces and apply changes in bulk: **apply or remove tags**, **assign domains**, **reassign capacity**, or **delete** — all in one streamlined operation, saving time and ensuring consistency.
 
+Workspace deletion includes a server-generated impact review listing every managed private endpoint. After explicit confirmation, the app refreshes that inventory, deletes and verifies each endpoint, performs a final zero-endpoint check, and only then deletes its workspace. Processing stops on the first failure; completed workspace IDs are retained so the operation can be reviewed and safely retried without repeating successful deletions.
+
 ![Modify Workspaces](docs/images/03-modify-workspaces.png)
 
 ### Developer Workspaces — Isolated Environments for Every Developer
@@ -83,7 +85,7 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Workspace Map** | Visual governance dashboard with domain grouping and PII/Reference Assets classification |
 | **Tenant Overview** | Dashboard with KPIs, filters, and CSV export for workspaces and gateways |
 | **Separated Authentication** | Delegated user tokens for Fabric, Power BI, Graph, and Azure identity operations; a dedicated service principal for Data Gateway administration |
-| **Batch Operations** | Apply tags, remove tags, assign domain, assign capacity, delete — across multiple workspaces |
+| **Batch Operations** | Apply tags, remove tags, assign domain, assign capacity, and safely delete workspaces after verified MPE cleanup |
 
 ---
 
@@ -335,7 +337,9 @@ Keep all secure parameter values outside source control. Use a secure pipeline v
 ```
 app.py                          ← Flask routes, OBO token exchange, and API logic
 gateway_session.py              ← Persistent isolated PowerShell session manager
+mpe_validation.py               ← Managed private endpoint provisioning preflight
 settings_repository.py          ← App Configuration and local settings backends
+workspace_deletion.py            ← MPE-first workspace deletion orchestration
 settings.json                   ← Local-only governance configuration fallback
 templates/
   ├── menu.html                 ← Main menu
@@ -345,6 +349,7 @@ templates/
   ├── workspace_compliance.html ← Compliance checks
   ├── gateway_governance.html   ← Gateway policies and installer management
   ├── modify_workspaces.html    ← Batch workspace operations
+  ├── confirm_workspace_deletion.html ← MPE deletion impact confirmation
   ├── workspace_map.html        ← Visual workspace map
   └── settings.html             ← Settings page
 scripts/
