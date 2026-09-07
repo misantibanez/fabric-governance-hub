@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirm Workspace Deletion</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+        .warning { background: #fff4ce; border-left: 4px solid #d83b01; padding: 16px 20px; margin-bottom: 20px; }
+        .warning h2 { color: #a4262c; font-size: 18px; margin-bottom: 6px; }
+        .warning p { font-size: 14px; line-height: 1.5; }
+        .summary { display: flex; gap: 32px; background: white; border: 1px solid #edebe9; padding: 16px 20px; margin-bottom: 16px; }
+        .summary strong { display: block; color: #a4262c; font-size: 22px; }
+        .summary span { color: #605e5c; font-size: 12px; }
+        .workspace { background: white; border: 1px solid #d2d0ce; border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+        .workspace-header { padding: 14px 18px; border-bottom: 1px solid #edebe9; }
+        .workspace-header h3 { font-size: 16px; margin-bottom: 3px; }
+        .workspace-id { color: #605e5c; font-family: Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+        .endpoint-list { list-style: none; }
+        .endpoint { padding: 11px 18px; border-bottom: 1px solid #f3f2f1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .endpoint:last-child { border-bottom: none; }
+        .endpoint-name { font-size: 13px; font-weight: 600; }
+        .endpoint-id { color: #605e5c; font-family: Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+        .status { background: #e0f0ff; color: #005a9e; border-radius: 12px; padding: 3px 9px; font-size: 11px; white-space: nowrap; }
+        .empty { color: #605e5c; font-size: 13px; padding: 12px 18px; }
+        .absent { color: #107c10; }
+        .confirmation { background: white; border: 1px solid #d2d0ce; padding: 18px; margin-top: 20px; }
+        .confirmation label { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 600; line-height: 1.45; }
+        .confirmation input[type="checkbox"] { margin-top: 3px; width: 16px; height: 16px; flex: 0 0 auto; }
+        .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .btn { display: inline-block; border: none; border-radius: 4px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .btn-secondary { background: #edebe9; color: #323130; }
+        .btn-danger { background: #d13438; color: white; }
+        .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+        @media (max-width: 640px) {
+            header { padding: 16px 20px; }
+            .container { padding: 16px; }
+            .summary { gap: 18px; }
+            .endpoint { align-items: flex-start; flex-direction: column; }
+            .actions { align-items: stretch; flex-direction: column-reverse; }
+            .btn { text-align: center; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="{{ url_for('modify_workspaces') }}">← Back</a>
+        <h1>Confirm Workspace Deletion</h1>
+    </header>
+    <main class="container">
+        <section class="warning">
+            <h2>This action cannot be undone</h2>
+            <p>Managed private endpoints are deleted and verified first. A workspace is deleted only after Fabric confirms that no managed private endpoints remain. Processing stops at the first failure.</p>
+        </section>
+
+        <div class="summary">
+            <div><strong>{{ previews | length }}</strong><span>Workspaces selected</span></div>
+            <div><strong>{{ endpoint_count }}</strong><span>Managed private endpoints found</span></div>
+        </div>
+
+        {% for workspace in previews %}
+        <section class="workspace">
+            <div class="workspace-header">
+                <h3>{{ workspace.name }}</h3>
+                <div class="workspace-id">{{ workspace.id }}</div>
+            </div>
+            {% if workspace.already_absent %}
+            <p class="empty absent">Workspace is already absent and will be treated as deleted.</p>
+            {% elif workspace.managed_private_endpoints %}
+            <ul class="endpoint-list">
+                {% for endpoint in workspace.managed_private_endpoints %}
+                <li class="endpoint">
+                    <div>
+                        <div class="endpoint-name">{{ endpoint.name }}</div>
+                        <div class="endpoint-id">{{ endpoint.id }}</div>
+                    </div>
+                    <span class="status">{{ endpoint.status }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty">No managed private endpoints found.</p>
+            {% endif %}
+        </section>
+        {% endfor %}
+
+        <form class="confirmation" method="POST" action="{{ url_for('confirm_workspace_deletion') }}">
+            <input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
+            <label>
+                <input type="checkbox" name="confirmed" value="yes" required onchange="document.getElementById('confirm-delete').disabled = !this.checked">
+                <span>I understand that all listed managed private endpoints will be removed before these workspaces are permanently deleted.</span>
+            </label>
+            <div class="actions">
+                <a class="btn btn-secondary" href="{{ url_for('modify_workspaces') }}">Cancel</a>
+                <button class="btn btn-danger" id="confirm-delete" type="submit" disabled>Delete Workspaces</button>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

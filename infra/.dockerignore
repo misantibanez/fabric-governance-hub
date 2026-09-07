@@ -7,6 +7,7 @@
 !gateway_session.py
 !mpe_validation.py
 !settings_repository.py
+!workspace_deletion.py
 !scripts/
 !scripts/**
 !templates/

@@ -201,9 +201,10 @@
                 <!-- Delete Workspaces -->
                 <div class="action-card">
                     <h3>Delete Workspaces</h3>
-                    <form method="POST" action="/modify-workspaces/delete" onsubmit="return injectSelected(this) && confirm('Are you sure you want to delete the selected workspaces? This cannot be undone.')">
+                    <form method="POST" action="/modify-workspaces/delete" onsubmit="return injectSelected(this)">
+                        <input type="hidden" name="review_token" value="{{ deletion_review_token }}">
                         <input type="hidden" name="workspace_ids" id="del-ws-ids">
-                        <button type="submit" class="btn btn-danger" id="btn-del" disabled>Delete Selected</button>
+                        <button type="submit" class="btn btn-danger" id="btn-del" disabled>Review Deletion</button>
                     </form>
                 </div>
             </div>
