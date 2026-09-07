@@ -18,6 +18,29 @@ class WorkspaceDeletionRouteTests(unittest.TestCase):
         application.app.config.update(TESTING=True, SECRET_KEY="test-secret")
         self.client = application.app.test_client()
 
+    @patch.object(application.requests, "get")
+    def test_workspace_enrichment_keeps_workspace_after_connection_reset(self, request_get):
+        request_get.side_effect = application.requests.ConnectionError(
+            "Connection reset by peer"
+        )
+        workspace = {"id": "ws-1", "name": "Workspace One"}
+
+        result = application.enrich_workspaces(
+            [workspace], {"Authorization": "Bearer hidden"}
+        )
+
+        self.assertEqual([workspace], result)
+
+    @patch.object(application.requests, "get")
+    def test_workspace_enrichment_still_filters_not_found_workspace(self, request_get):
+        request_get.return_value.status_code = 404
+
+        result = application.enrich_workspaces(
+            [{"id": "ws-1"}], {"Authorization": "Bearer hidden"}
+        )
+
+        self.assertEqual([], result)
+
     @patch.object(application.requests, "delete")
     @patch.object(application, "get_headers", return_value={"Authorization": "Bearer hidden"})
     @patch.object(application, "discover_workspace_deletions")

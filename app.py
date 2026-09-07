@@ -240,6 +240,34 @@ def fetch_workspaces(fabric_headers):
     return workspaces
 
 
+def enrich_workspaces(workspaces, fabric_headers, deleted_ids=()):
+    enriched = []
+    deleted_ids = set(deleted_ids)
+    for workspace in workspaces:
+        if workspace["id"] in deleted_ids:
+            continue
+        try:
+            response = requests.get(
+                f"https://api.fabric.microsoft.com/v1/workspaces/{workspace['id']}",
+                headers=fabric_headers,
+            )
+        except requests.RequestException as error:
+            print(
+                f"[WARN] fetch_workspace_detail failed for workspace "
+                f"{workspace['id']}: {type(error).__name__}"
+            )
+            enriched.append(workspace)
+            continue
+        if response.status_code == 200:
+            detail = response.json()
+            workspace["tags"] = detail.get("tags", [])
+            workspace["domainId"] = detail.get("domainId")
+            enriched.append(workspace)
+        elif response.status_code != 404:
+            enriched.append(workspace)
+    return enriched
+
+
 # --- Fabric admin APIs (use Fabric token) ---
 
 def fetch_domains(fabric_headers):
@@ -969,21 +997,7 @@ def workspace_map():
     domains_raw = fetch_domains(fabric_headers)
     tags = fetch_tags(fabric_headers)
 
-    # Enrich workspaces with tags and domainId
-    enriched = []
-    for ws in workspaces:
-        resp = requests.get(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{ws['id']}",
-            headers=fabric_headers,
-        )
-        if resp.status_code == 200:
-            detail = resp.json()
-            ws["tags"] = detail.get("tags", [])
-            ws["domainId"] = detail.get("domainId")
-            enriched.append(ws)
-        elif resp.status_code != 404:
-            enriched.append(ws)
-    workspaces = enriched
+    workspaces = enrich_workspaces(workspaces, fabric_headers)
 
     domain_map = {d["id"]: d["displayName"] for d in domains_raw}
     capacity_map = {c["id"]: c.get("displayName") or c.get("name", "") for c in capacities}
@@ -1019,26 +1033,8 @@ def modify_workspaces():
     domains_raw = fetch_domains(fabric_headers)
     tags = fetch_tags(fabric_headers)
 
-    # Enrich each workspace with tags and domainId; filter out deleted ones
     deleted_ids = set(session.pop("deleted_workspace_ids", []))
-    enriched = []
-    for ws in workspaces:
-        if ws["id"] in deleted_ids:
-            continue
-        resp = requests.get(
-            f"https://api.fabric.microsoft.com/v1/workspaces/{ws['id']}",
-            headers=fabric_headers,
-        )
-        if resp.status_code == 200:
-            detail = resp.json()
-            ws["tags"] = detail.get("tags", [])
-            ws["domainId"] = detail.get("domainId")
-            enriched.append(ws)
-        elif resp.status_code == 404:
-            continue
-        else:
-            enriched.append(ws)
-    workspaces = enriched
+    workspaces = enrich_workspaces(workspaces, fabric_headers, deleted_ids)
 
     domain_map = {d["id"]: d["displayName"] for d in domains_raw}
     for d in domains_raw:
