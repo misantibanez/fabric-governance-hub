@@ -386,6 +386,24 @@ Fabric, Power BI, and Graph use delegated user tokens in the hosted application.
 
 This is an internal tool built to accelerate Fabric workspace management. PRs and suggestions welcome.
 
+### Issue and Branch Workflow
+
+GitHub Actions keeps the **Fabric Governance Hub Roadmap** status synchronized with the branch lifecycle. Feature branches must include the numeric issue identifier using `feature/<issue>-<description>` or `feature/issue-<issue>-<description>`.
+
+| Event | Roadmap status |
+|-------|----------------|
+| A matching feature branch is created | `In progress` |
+| The feature pull request is merged into `develop` | `In review` |
+| A `develop` pull request is merged into `main` | `Done` |
+
+The production promotion discovers the feature pull requests associated with the promoted commits, so release PR descriptions do not need to repeat issue references. Issues that are not yet in the Roadmap are added automatically.
+
+The workflow requires the repository Actions secret `PROJECT_V2_TOKEN`. Use a token owned by an account with write access to the Roadmap; for a classic personal access token, grant `project` and `repo` scopes. Configure it interactively without placing the token in shell history:
+
+```powershell
+gh secret set PROJECT_V2_TOKEN --repo misantibanez/fabric-governance-hub
+```
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
