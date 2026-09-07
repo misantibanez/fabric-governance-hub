@@ -10,6 +10,7 @@ import requests
 from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
 from mpe_validation import MpeValidationError, mpe_audit_record, validate_mpe_configuration
+from monitoring_validation import MonitoringValidationError, validate_monitoring_configuration
 from settings_repository import SettingsConflictError, create_settings_repository
 from workspace_deletion import (
     WorkspaceDeletionError,
@@ -65,6 +66,7 @@ DEFAULT_SETTINGS = {
     "branches": ["feature", "main"],
     "mpe_cognitive_services_resource_id": "",
     "mpe_keyvault_resource_id": "",
+    "log_analytics_workspace_resource_id": "",
     "compliance_domain_required_tag": "DHUB",
 }
 _settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTINGS)
@@ -81,6 +83,27 @@ def preflight_mpe_configuration(settings, include_cognitive_services):
         {"Authorization": f"Bearer {get_azure_token()}"},
         requests.get,
     )
+
+
+def preflight_monitoring_configuration(settings):
+    return validate_monitoring_configuration(
+        settings,
+        {"Authorization": f"Bearer {get_azure_token()}"},
+        requests.get,
+    )
+
+
+def configure_workspace_monitoring(workspace_id, configuration, pbi_headers):
+    response = requests.patch(
+        f"https://api.powerbi.com/v1.0/myorg/admin/groups/{workspace_id}",
+        headers={**pbi_headers, "Content-Type": "application/json"},
+        json={"logAnalyticsWorkspace": configuration.to_power_bi_payload()},
+    )
+    if response.status_code == 200:
+        return []
+    return [
+        f"Failed to configure Log Analytics: {response.status_code} - {response.text}"
+    ]
 
 
 def create_managed_private_endpoints(workspace_id, workspace_name, targets, fabric_headers):
@@ -713,6 +736,11 @@ def create_workspace():
         for message in error.messages:
             flash(message, "mpe-error")
         return redirect(url_for("create_workspace_form"))
+    try:
+        monitoring_configuration = preflight_monitoring_configuration(settings)
+    except MonitoringValidationError as error:
+        flash(str(error), "monitoring-error")
+        return redirect(url_for("create_workspace_form"))
     app.logger.info(
         "MPE preflight passed for workspace %s: %s",
         name,
@@ -789,27 +817,10 @@ def create_workspace():
                 f"Failed to apply tags: {resp_tags.status_code} - {resp_tags.text}"
             )
 
-    # 5. Configure Log Analytics (Power BI admin API)
-    la_subscription = request.form.get("la_subscription_id", "").strip()
-    la_resource_group = request.form.get("la_resource_group", "").strip()
-    la_workspace_name = request.form.get("la_workspace_name", "").strip()
-    la_errors = []
-    if la_subscription and la_resource_group and la_workspace_name:
-        resp_la = requests.patch(
-            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{workspace_id}",
-            headers={**pbi_headers, "Content-Type": "application/json"},
-            json={
-                "logAnalyticsWorkspace": {
-                    "subscriptionId": la_subscription,
-                    "resourceGroup": la_resource_group,
-                    "resourceName": la_workspace_name,
-                }
-            },
-        )
-        if resp_la.status_code != 200:
-            la_errors.append(
-                f"Failed to configure Log Analytics: {resp_la.status_code} - {resp_la.text}"
-            )
+    # 5. Configure mandatory Log Analytics monitoring (Power BI admin API)
+    la_errors = configure_workspace_monitoring(
+        workspace_id, monitoring_configuration, pbi_headers
+    )
 
     # 6. Assign role groups (Fabric API)
     roles = {
@@ -1746,6 +1757,7 @@ def settings_page():
             "branches": [x.strip() for x in request.form.get("branches", "").split(",") if x.strip()],
             "mpe_cognitive_services_resource_id": request.form.get("mpe_cognitive_services_resource_id", "").strip(),
             "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
+            "log_analytics_workspace_resource_id": request.form.get("log_analytics_workspace_resource_id", "").strip(),
             "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
         expected_etag = request.form.get("settings_etag") or None

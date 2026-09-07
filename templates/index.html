@@ -36,10 +36,12 @@
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
-            <div class="flash flash-{{ 'error' if category == 'mpe-error' else category }}">
+            <div class="flash flash-{{ 'error' if category in ('mpe-error', 'monitoring-error') else category }}">
                 {{ message }}
                 {% if category == 'mpe-error' %}
                 <a href="{{ url_for('settings_page') }}#managed-private-endpoints">Open Settings</a>
+                {% elif category == 'monitoring-error' %}
+                <a href="{{ url_for('settings_page') }}#workspace-monitoring">Open Settings</a>
                 {% endif %}
             </div>
             {% endfor %}
@@ -116,18 +118,6 @@
                             <span id="tag-msg" style="font-size: 12px;"></span>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="la_subscription_id">Log Analytics - Subscription ID *</label>
-                        <input type="text" id="la_subscription_id" name="la_subscription_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-                    </div>
-                    <div class="form-group">
-                        <label for="la_resource_group">Log Analytics - Resource Group *</label>
-                        <input type="text" id="la_resource_group" name="la_resource_group" placeholder="my-resource-group">
-                    </div>
-                    <div class="form-group full-width">
-                        <label for="la_workspace_name">Log Analytics - Workspace Name *</label>
-                        <input type="text" id="la_workspace_name" name="la_workspace_name" placeholder="my-log-analytics-workspace">
-                    </div>
                     <div class="form-group full-width">
                         <label for="admins">Admin *</label>
                         <select id="admins" name="admins">
@@ -182,6 +172,18 @@
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; color: #323130;">
                         <input type="checkbox" checked disabled>
                         <span>🆔 <strong>Workspace Identity</strong> — <span style="color: #6D6E71;">provisioned on creation</span></span>
+                    </label>
+                </div>
+
+                <!-- Workspace Monitoring -->
+                <div id="workspace-monitoring" style="border-top: 2px solid #edebe9; padding-top: 16px; margin-top: 8px; margin-bottom: 16px;">
+                    <label style="font-size: 15px; font-weight: 700; color: #F37021;">Workspace Monitoring</label>
+                    <p style="font-size: 12px; color: #a19f9d; margin-top: 2px;">Centralized Log Analytics monitoring is required for every workspace.</p>
+                </div>
+                <div style="padding: 0 4px; margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; color: #323130;">
+                        <input type="checkbox" checked disabled>
+                        <span><strong>Log Analytics</strong> — <span style="color: #6D6E71;">{{ settings.log_analytics_workspace_resource_id.split('/')[-1] if settings.log_analytics_workspace_resource_id else 'configuration required in Settings' }}</span></span>
                     </label>
                 </div>
 

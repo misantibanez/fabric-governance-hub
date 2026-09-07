@@ -107,6 +107,18 @@
                 </div>
             </div>
 
+            <div class="card" id="workspace-monitoring">
+                <h2>Workspace Monitoring</h2>
+                <p>Log Analytics workspace assigned automatically to every new Fabric workspace.</p>
+
+                <div class="tag-group">
+                    <label>Log Analytics Workspace - Resource ID</label>
+                    <div class="add-row">
+                        <input type="text" name="log_analytics_workspace_resource_id" value="{{ settings.log_analytics_workspace_resource_id or '' }}" placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/...">
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <h2>Compliance Rules</h2>
                 <p>Define rules for workspace compliance checks.</p>
