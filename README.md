@@ -52,7 +52,7 @@ Review and update personal and standard gateway installation policies, manage au
 ![Gateway Governance](docs/images/11-gateway-governance.png)
 
 ### Settings — Configure Once, Use Everywhere
-Define tag groups (Environment, Branch), managed private endpoint resource IDs, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
+Define tag groups (Environment, Branch), managed private endpoint resource IDs, the mandatory Log Analytics workspace, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
 
 ![Settings](docs/images/06-settings.png)
 
@@ -273,6 +273,8 @@ When `AZURE_APPCONFIG_ENDPOINT` is absent, local development continues to use th
 
 Before creating standard or developer workspaces, the app validates the selected Managed Private Endpoint settings through Azure Resource Manager. Key Vault is required; Cognitive Services is validated when selected. The preflight verifies each complete resource ID, Azure resource type, caller access, and required private-link subresource before any workspace, branch, connection, or job is created. Validation failures link directly to the Managed Private Endpoints section in `/settings`. Successful preflights log the immutable resource configuration used by the operation without tokens or secrets.
 
+Standard workspace creation also requires `log_analytics_workspace_resource_id`, a complete Azure resource ID for `Microsoft.OperationalInsights/workspaces`. The app validates the resource through Azure Resource Manager before creating the Fabric workspace, derives the subscription, resource group, and workspace name server-side, and applies that immutable snapshot through the Power BI admin API. The Create Workspace form displays monitoring as mandatory and does not accept a browser-supplied monitoring destination.
+
 To inspect hosted values in **Configuration explorer** while public access is disabled:
 
 1. Connect to an administrative VM through Azure Bastion.
@@ -337,6 +339,7 @@ Keep all secure parameter values outside source control. Use a secure pipeline v
 ```
 app.py                          ← Flask routes, OBO token exchange, and API logic
 gateway_session.py              ← Persistent isolated PowerShell session manager
+monitoring_validation.py        ← Log Analytics workspace provisioning preflight
 mpe_validation.py               ← Managed private endpoint provisioning preflight
 settings_repository.py          ← App Configuration and local settings backends
 workspace_deletion.py            ← MPE-first workspace deletion orchestration
