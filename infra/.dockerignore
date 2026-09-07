@@ -1,9 +1,11 @@
 *
-!Dockerfile
 !.dockerignore
-!requirements.azure.txt
+!infra/
+!infra/Dockerfile
+!infra/requirements.azure.txt
 !app.py
 !gateway_session.py
+!settings_repository.py
 !scripts/
 !scripts/**
 !templates/

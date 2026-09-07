@@ -208,10 +208,11 @@ Infrastructure is defined in Bicep under `infra/` and deployed at subscription s
 | **Azure Container Registry** | Stores the application image; the app pulls through managed identity |
 | **User-assigned managed identities** | Separate application and token-rotation workload identities |
 | **Azure Key Vault** | Stores deployment secrets with RBAC authorization, soft delete, and public network access disabled |
+| **Azure App Configuration** | Stores shared, non-secret governance settings with optimistic concurrency |
 | **Storage account** | Private Blob container used by the Easy Auth token store; shared-key access and public access are disabled |
 | **Log Analytics and Application Insights** | Centralized logs, metrics, requests, dependencies, and application telemetry |
 | **Virtual network** | `10.40.0.0/16` with a delegated Container Apps subnet and a separate private-endpoint subnet |
-| **Private endpoints and DNS** | Private access for ACR, Key Vault, Blob Storage, Log Analytics, and Application Insights/Azure Monitor |
+| **Private endpoints and DNS** | Private access for ACR, Key Vault, App Configuration, Blob Storage, Log Analytics, and Application Insights/Azure Monitor |
 | **Container Apps job** | Periodically rotates the Easy Auth token-store SAS and restarts the application revision |
 
 ### Network Layout
@@ -223,11 +224,12 @@ vnet-fabric-gov-<environment>
 └── snet-private-endpoints    10.40.2.0/24
     ├── Azure Container Registry private endpoint
     ├── Key Vault private endpoint
+    ├── App Configuration private endpoint
     ├── Blob Storage private endpoint
     └── Azure Monitor private endpoints
 ```
 
-Private DNS zones are linked to the application VNet. Administrative access from a jumpserver or another VNet requires peering and a link to the relevant private DNS zone, such as `privatelink.vaultcore.azure.net` for Key Vault.
+Private DNS zones are linked to the application VNet. Administrative access from a jumpserver or another VNet requires peering and a link to the relevant private DNS zone, such as `privatelink.vaultcore.azure.net` for Key Vault or `privatelink.azconfig.io` for App Configuration. Set `adminVirtualNetworkId` to the resource ID of the administrative VNet to create the App Configuration DNS link during deployment.
 
 ### Managed Identity and RBAC
 
@@ -235,11 +237,12 @@ The Bicep deployment assigns least-privilege roles:
 
 - Application identity: `AcrPull` on the registry.
 - Application identity: `Key Vault Secrets User` on the vault.
+- Application identity: `App Configuration Data Owner` on the configuration store.
 - Application identity: `Storage Blob Data Contributor` for the Easy Auth token store.
 - Deployer: `Key Vault Secrets Officer` on the vault.
 - Rotation job identity: scoped Storage, Container Apps, Container Apps Environment, and Managed Identity roles required to rotate the SAS and restart the target revision.
 
-The Gateway service principal is separate from these Azure managed identities and is not used to access ACR, Key Vault, or Storage.
+The Gateway service principal is separate from these Azure managed identities and is not used to access ACR, Key Vault, App Configuration, or Storage.
 
 ### Secrets and Configuration
 
@@ -254,6 +257,26 @@ The Gateway service principal is separate from these Azure managed identities an
 | `FLASK_SECRET_KEY` | Yes | Flask session signing key |
 | `GITHUB_PAT` | Yes, optional | GitHub API authentication |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | Application Insights telemetry endpoint |
+| `AZURE_CLIENT_ID` | No | User-assigned managed identity used for App Configuration |
+| `AZURE_APPCONFIG_ENDPOINT` | No | App Configuration data-plane endpoint |
+| `AZURE_APPCONFIG_LABEL` | No | Environment label that isolates the settings document |
+
+### Shared Settings Persistence
+
+Hosted deployments store the Settings page document in Azure App Configuration under `fabric-governance-hub:settings`, labeled with the deployment environment. The application authenticates with its user-assigned managed identity; access keys and connection strings are disabled. App Configuration contains only non-secret governance values. Credentials and session-signing material remain in Key Vault and Container Apps secrets.
+
+Each Settings page load carries the App Configuration ETag. Saving uses `If-Match`, so a stale administrator session cannot overwrite a newer change. The app returns HTTP `409 Conflict` and reloads the latest values when concurrent editing is detected.
+
+When `AZURE_APPCONFIG_ENDPOINT` is absent, local development continues to use the ignored `settings.json` file. Local writes are atomic and use the same ETag conflict behavior.
+
+To inspect hosted values in **Configuration explorer** while public access is disabled:
+
+1. Connect to an administrative VM through Azure Bastion.
+2. Open Azure Portal in a browser running inside the remote VM. A browser on the local workstation does not use the Bastion network path.
+3. Confirm the VM VNet is peered with the application VNet and linked to `privatelink.azconfig.io`.
+4. Open the App Configuration store and select **Configuration explorer**. DNS changes can take several minutes to propagate.
+
+The settings key is created on the first successful save from `/settings`; a newly provisioned store is expected to have no keys before that save.
 
 Secrets are created in both Key Vault and the Container Apps secret collection during deployment. A Container Apps secret is a separate copy; changing Key Vault does not automatically update the running Container App.
 
@@ -310,7 +333,8 @@ Keep all secure parameter values outside source control. Use a secure pipeline v
 ```
 app.py                          ← Flask routes, OBO token exchange, and API logic
 gateway_session.py              ← Persistent isolated PowerShell session manager
-settings.json                   ← Governance configuration
+settings_repository.py          ← App Configuration and local settings backends
+settings.json                   ← Local-only governance configuration fallback
 templates/
   ├── menu.html                 ← Main menu
   ├── index.html                ← Create Workspace form
@@ -352,6 +376,9 @@ Fabric, Power BI, and Graph use delegated user tokens in the hosted application.
 - **Gateway API authorization fails after OAuth succeeds**: verify the enterprise service principal's direct membership in the allowed tenant security group and its Gateway administration permissions.
 - **Container Apps continues using an old secret**: create a new revision by changing the template; do not rely solely on restarting an existing replica.
 - **Easy Auth token-store failures**: inspect the rotation job, SAS expiry, private Blob DNS, and the rotation identity's scoped RBAC assignments.
+- **Settings fail to load or save in Azure**: verify private DNS for `privatelink.azconfig.io`, TCP 443 connectivity, and the application identity's `App Configuration Data Owner` assignment.
+- **Configuration explorer reports that public access is disabled**: open Azure Portal inside the Bastion-connected administrative VM and verify that its VNet is linked to `privatelink.azconfig.io`. Resolving the store hostname to a public IP indicates a missing DNS link.
+- **Settings save returns `409`**: another administrator saved a newer version. Review the refreshed values, reapply the intended change, and save again.
 
 ---
 

@@ -52,6 +52,7 @@
         {% endwith %}
 
         <form method="POST" action="/settings">
+            <input type="hidden" name="settings_etag" value="{{ settings_etag or '' }}">
             <div class="card">
                 <h2>Tag Groups Configuration</h2>
                 <p>Define which tag names belong to each group. These groups are used in Create Workspace and Workspace Map views.</p>

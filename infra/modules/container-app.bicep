@@ -2,7 +2,10 @@ param containerAppName string
 param location string
 param managedEnvironmentId string
 param managedIdentityId string
+param managedIdentityClientId string
 param registryLoginServer string
+param appConfigurationEndpoint string
+param appConfigurationLabel string
 @secure()
 param tokenStoreSasUrl string
 param applicationInsightsConnectionString string
@@ -50,6 +53,18 @@ var plainEnvironmentVariables = [
   {
     name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
     value: applicationInsightsConnectionString
+  }
+  {
+    name: 'AZURE_CLIENT_ID'
+    value: managedIdentityClientId
+  }
+  {
+    name: 'AZURE_APPCONFIG_ENDPOINT'
+    value: appConfigurationEndpoint
+  }
+  {
+    name: 'AZURE_APPCONFIG_LABEL'
+    value: appConfigurationLabel
   }
 ]
 var requiredSecretEnvironmentVariables = [
