@@ -43,7 +43,7 @@ WORKDIR /app
 COPY infra/requirements.azure.txt ./requirements.azure.txt
 RUN pip install --no-cache-dir --requirement requirements.azure.txt
 
-COPY app.py gateway_session.py settings_repository.py ./
+COPY app.py gateway_session.py mpe_validation.py settings_repository.py ./
 COPY scripts ./scripts
 COPY templates ./templates
 

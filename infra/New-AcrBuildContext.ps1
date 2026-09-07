@@ -19,6 +19,7 @@ Copy-Item (Join-Path $infraPath '.dockerignore') $Destination
 Copy-Item (Join-Path $infraPath 'requirements.azure.txt') (Join-Path $Destination 'infra')
 Copy-Item (Join-Path $repoPath 'app.py') $Destination
 Copy-Item (Join-Path $repoPath 'gateway_session.py') $Destination
+Copy-Item (Join-Path $repoPath 'mpe_validation.py') $Destination
 Copy-Item (Join-Path $repoPath 'settings_repository.py') $Destination
 Copy-Item -Recurse (Join-Path $repoPath 'scripts') $Destination
 Copy-Item -Recurse (Join-Path $repoPath 'templates') $Destination

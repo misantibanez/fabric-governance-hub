@@ -150,9 +150,19 @@
         const formData = new FormData(form);
         // POST form data to save to session, then open SSE stream
         fetch('/create-developer-workspaces', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (!data.ok) { progressLog.textContent = 'ERROR: Failed to start'; return; }
+            .then(async r => ({ response: r, data: await r.json() }))
+            .then(({ response, data }) => {
+                if (!response.ok || !data.ok) {
+                    progressLog.textContent = 'ERROR: ' + (data.error || 'Failed to start') + '\n';
+                    if (data.settings_url) {
+                        const settingsLink = document.createElement('a');
+                        settingsLink.href = data.settings_url;
+                        settingsLink.textContent = 'Open Settings';
+                        settingsLink.style.color = '#6cb8f6';
+                        progressLog.appendChild(settingsLink);
+                    }
+                    return;
+                }
                 const source = new EventSource('/dev-ws-stream');
                 source.onmessage = function(e) {
                     const span = document.createElement('span');

@@ -269,6 +269,8 @@ Each Settings page load carries the App Configuration ETag. Saving uses `If-Matc
 
 When `AZURE_APPCONFIG_ENDPOINT` is absent, local development continues to use the ignored `settings.json` file. Local writes are atomic and use the same ETag conflict behavior.
 
+Before creating standard or developer workspaces, the app validates the selected Managed Private Endpoint settings through Azure Resource Manager. Key Vault is required; Cognitive Services is validated when selected. The preflight verifies each complete resource ID, Azure resource type, caller access, and required private-link subresource before any workspace, branch, connection, or job is created. Validation failures link directly to the Managed Private Endpoints section in `/settings`. Successful preflights log the immutable resource configuration used by the operation without tokens or secrets.
+
 To inspect hosted values in **Configuration explorer** while public access is disabled:
 
 1. Connect to an administrative VM through Azure Bastion.

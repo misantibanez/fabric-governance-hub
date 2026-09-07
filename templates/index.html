@@ -36,7 +36,12 @@
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
-            <div class="flash flash-{{ category }}">{{ message }}</div>
+            <div class="flash flash-{{ 'error' if category == 'mpe-error' else category }}">
+                {{ message }}
+                {% if category == 'mpe-error' %}
+                <a href="{{ url_for('settings_page') }}#managed-private-endpoints">Open Settings</a>
+                {% endif %}
+            </div>
             {% endfor %}
         {% endif %}
         {% endwith %}
