@@ -5,6 +5,7 @@
 !infra/requirements.azure.txt
 !app.py
 !gateway_session.py
+!monitoring_validation.py
 !mpe_validation.py
 !settings_repository.py
 !workspace_deletion.py
