@@ -21,6 +21,7 @@ Copy-Item (Join-Path $repoPath 'app.py') $Destination
 Copy-Item (Join-Path $repoPath 'gateway_session.py') $Destination
 Copy-Item (Join-Path $repoPath 'mpe_validation.py') $Destination
 Copy-Item (Join-Path $repoPath 'settings_repository.py') $Destination
+Copy-Item (Join-Path $repoPath 'workspace_deletion.py') $Destination
 Copy-Item -Recurse (Join-Path $repoPath 'scripts') $Destination
 Copy-Item -Recurse (Join-Path $repoPath 'templates') $Destination
 

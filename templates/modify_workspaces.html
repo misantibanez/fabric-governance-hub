@@ -201,9 +201,10 @@
                 <!-- Delete Workspaces -->
                 <div class="action-card">
                     <h3>Delete Workspaces</h3>
-                    <form method="POST" action="/modify-workspaces/delete" onsubmit="return injectSelected(this) && confirm('Are you sure you want to delete the selected workspaces? This cannot be undone.')">
+                    <form method="POST" action="/modify-workspaces/delete" onsubmit="return beginDeletionReview(this)">
+                        <input type="hidden" name="review_token" value="{{ deletion_review_token }}">
                         <input type="hidden" name="workspace_ids" id="del-ws-ids">
-                        <button type="submit" class="btn btn-danger" id="btn-del" disabled>Delete Selected</button>
+                        <button type="submit" class="btn btn-danger" id="btn-del" disabled>Review Deletion</button>
                     </form>
                 </div>
             </div>
@@ -238,6 +239,16 @@
         if (ids.length === 0) { alert('Select at least one workspace.'); return false; }
         const hidden = form.querySelector('input[name="workspace_ids"]');
         hidden.value = JSON.stringify(ids);
+        return true;
+    }
+
+    function beginDeletionReview(form) {
+        if (!injectSelected(form)) return false;
+        if (form.dataset.submitted === 'true') return false;
+        form.dataset.submitted = 'true';
+        const button = document.getElementById('btn-del');
+        button.disabled = true;
+        button.textContent = 'Inspecting endpoints...';
         return true;
     }
 
