@@ -44,6 +44,9 @@ class WorkspaceDeletionRouteTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn(b"Workspace One", response.data)
         self.assertIn(b"Key Vault", response.data)
+        self.assertIn(b'id="deletion-progress"', response.data)
+        self.assertIn(b"Waiting for Fabric verification", response.data)
+        self.assertNotIn(b"checkbox.disabled = true", response.data)
         request_delete.assert_not_called()
         with self.client.session_transaction() as flask_session:
             confirmation = flask_session["workspace_delete_confirmation"]
