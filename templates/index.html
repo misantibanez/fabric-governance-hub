@@ -178,12 +178,22 @@
                 <!-- Workspace Monitoring -->
                 <div id="workspace-monitoring" style="border-top: 2px solid #edebe9; padding-top: 16px; margin-top: 8px; margin-bottom: 16px;">
                     <label style="font-size: 15px; font-weight: 700; color: #F37021;">Workspace Monitoring</label>
-                    <p style="font-size: 12px; color: #a19f9d; margin-top: 2px;">Centralized Log Analytics monitoring is required for every workspace.</p>
+                    <p style="font-size: 12px; color: #a19f9d; margin-top: 2px;">Select exactly one option{% if settings.workspace_monitoring_required %}; monitoring is required by policy{% endif %}.</p>
                 </div>
-                <div style="padding: 0 4px; margin-bottom: 16px;">
-                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; color: #323130;">
-                        <input type="checkbox" checked disabled>
+                <div style="display: grid; gap: 10px; padding: 0 4px; margin-bottom: 16px;">
+                    {% if not settings.workspace_monitoring_required %}
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #323130;">
+                        <input type="radio" name="monitoring_provider" value="none" checked>
+                        <span><strong>No monitoring</strong></span>
+                    </label>
+                    {% endif %}
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #323130;">
+                        <input type="radio" name="monitoring_provider" value="log_analytics" {% if settings.workspace_monitoring_required %}required{% endif %} {% if not settings.log_analytics_workspace_resource_id %}disabled{% endif %}>
                         <span><strong>Log Analytics</strong> — <span style="color: #6D6E71;">{{ settings.log_analytics_workspace_resource_id.split('/')[-1] if settings.log_analytics_workspace_resource_id else 'configuration required in Settings' }}</span></span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #323130;">
+                        <input type="radio" name="monitoring_provider" value="fabric_workspace_monitoring" {% if settings.workspace_monitoring_required %}required{% endif %} {% if not settings.fabric_monitoring_api_base_url %}disabled{% endif %}>
+                        <span><strong>Fabric Workspace Monitoring</strong> — <span style="color: #6D6E71;">{% if settings.fabric_monitoring_api_base_url %}creates a managed Eventhouse and KQL database{% else %}configuration required in Settings{% endif %}</span></span>
                     </label>
                 </div>
 

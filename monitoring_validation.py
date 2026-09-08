@@ -1,10 +1,17 @@
 from dataclasses import dataclass
 import re
+from urllib.parse import urlparse
 
 import requests
 
 
 SETTING_NAME = "log_analytics_workspace_resource_id"
+FABRIC_API_SETTING_NAME = "fabric_monitoring_api_base_url"
+REQUIRED_SETTING_NAME = "workspace_monitoring_required"
+PROVIDER_NONE = "none"
+PROVIDER_LOG_ANALYTICS = "log_analytics"
+PROVIDER_FABRIC = "fabric_workspace_monitoring"
+VALID_PROVIDERS = {PROVIDER_NONE, PROVIDER_LOG_ANALYTICS, PROVIDER_FABRIC}
 RESOURCE_TYPE = "Microsoft.OperationalInsights/workspaces"
 API_VERSION = "2023-09-01"
 RESOURCE_ID_PATTERN = re.compile(
@@ -29,8 +36,68 @@ class WorkspaceMonitoringConfiguration:
         }
 
 
+@dataclass(frozen=True)
+class FabricWorkspaceMonitoringConfiguration:
+    api_base_url: str
+
+
+@dataclass(frozen=True)
+class MonitoringSelection:
+    provider: str
+    configuration: object = None
+
+
 class MonitoringValidationError(ValueError):
     pass
+
+
+def monitoring_is_required(settings):
+    value = settings.get(REQUIRED_SETTING_NAME, False)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_monitoring_selection(
+    settings, provider, azure_headers, request_get, power_bi_headers
+):
+    selected_provider = str(provider or PROVIDER_NONE).strip().lower()
+    if selected_provider not in VALID_PROVIDERS:
+        raise MonitoringValidationError("Select a valid workspace monitoring option.")
+    if selected_provider == PROVIDER_NONE:
+        if monitoring_is_required(settings):
+            raise MonitoringValidationError(
+                "Workspace monitoring is required. Select Log Analytics or Fabric "
+                "Workspace Monitoring."
+            )
+        return MonitoringSelection(PROVIDER_NONE)
+    if selected_provider == PROVIDER_LOG_ANALYTICS:
+        return MonitoringSelection(
+            PROVIDER_LOG_ANALYTICS,
+            validate_monitoring_configuration(settings, azure_headers, request_get),
+        )
+
+    api_base_url = str(settings.get(FABRIC_API_SETTING_NAME, "")).strip().rstrip("/")
+    parsed_url = urlparse(api_base_url)
+    if (
+        parsed_url.scheme != "https"
+        or not parsed_url.hostname
+        or not parsed_url.hostname.lower().endswith(".analysis.windows.net")
+        or parsed_url.path not in ("", "/")
+    ):
+        raise MonitoringValidationError(
+            f"Workspace monitoring setting `{FABRIC_API_SETTING_NAME}` must be an "
+            "HTTPS analysis.windows.net cluster URL."
+        )
+    if not str(power_bi_headers.get("Authorization", "")).startswith("Bearer "):
+        raise MonitoringValidationError(
+            "Fabric Workspace Monitoring requires a Power BI access token. Sign in "
+            "again and retry."
+        )
+    return MonitoringSelection(
+        PROVIDER_FABRIC,
+        FabricWorkspaceMonitoringConfiguration(api_base_url=api_base_url),
+    )
 
 
 def validate_monitoring_configuration(settings, azure_headers, request_get):

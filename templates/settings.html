@@ -109,13 +109,28 @@
 
             <div class="card" id="workspace-monitoring">
                 <h2>Workspace Monitoring</h2>
-                <p>Log Analytics workspace assigned automatically to every new Fabric workspace.</p>
+                <p>Configure the exclusive monitoring options available during workspace creation.</p>
+
+                <div class="tag-group">
+                    <label style="display: flex; align-items: center; gap: 8px; font-weight: 400;">
+                        <input type="checkbox" name="workspace_monitoring_required" value="1" {% if settings.workspace_monitoring_required %}checked{% endif %}>
+                        Require one monitoring integration for every new workspace
+                    </label>
+                </div>
 
                 <div class="tag-group">
                     <label>Log Analytics Workspace - Resource ID</label>
                     <div class="add-row">
                         <input type="text" name="log_analytics_workspace_resource_id" value="{{ settings.log_analytics_workspace_resource_id or '' }}" placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/...">
                     </div>
+                </div>
+
+                <div class="tag-group">
+                    <label>Fabric monitoring metadata cluster URL</label>
+                    <div class="add-row">
+                        <input type="url" name="fabric_monitoring_api_base_url" value="{{ settings.fabric_monitoring_api_base_url or '' }}" placeholder="https://wabi-...-redirect.analysis.windows.net">
+                    </div>
+                    <p style="margin-top: 6px; margin-bottom: 0;">Regional URL used by Fabric Workspace settings for platform monitoring.</p>
                 </div>
             </div>
 
