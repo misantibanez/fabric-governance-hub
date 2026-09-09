@@ -18,7 +18,7 @@ As your Fabric environment grows, so does the need for consistent, repeatable wo
 ## What can it do?
 
 ### Create Workspace — Full Provisioning in One Click
-Everything your workspace needs, configured from the start: capacity, domain, tags, exclusive Log Analytics or Fabric Workspace Monitoring, role assignments, workspace identity, managed private endpoints, initial folders, notebooks, pipelines, lakehouse, and GitHub integration — all in a single, guided experience.
+Everything your workspace needs, configured from the start: capacity, domain, tags, Log Analytics, role assignments, workspace identity, managed private endpoints, initial folders, notebooks, pipelines, lakehouse, and GitHub integration — all in a single, guided experience.
 
 ![Create Workspace](docs/images/02-create-workspace.png)
 
@@ -52,9 +52,9 @@ Review and update personal and standard gateway installation policies, manage au
 ![Gateway Governance](docs/images/11-gateway-governance.png)
 
 ### Settings — Configure Once, Use Everywhere
-Define tag groups (Environment, Branch), managed private endpoint resource IDs, monitoring policy, and compliance rules in one place. Monitoring can be optional or mandatory; workspace creation permits exactly one of no monitoring, Log Analytics, or Fabric Workspace Monitoring.
+Define tag groups (Environment, Branch), managed private endpoint resource IDs, monitoring policy, and compliance rules in one place. Monitoring can be optional or mandatory; workspace creation permits no monitoring when policy allows it, or Log Analytics.
 
-Fabric Workspace Monitoring creates the managed monitoring Eventhouse and KQL database, then enables workspace activity ingestion. Settings must contain the regional `analysis.windows.net` metadata cluster URL used by the Fabric portal. This integration currently relies on that portal metadata endpoint because it is not included in the public Fabric REST specification. After creation, pausing logging, deleting the monitoring Eventhouse, or changing monitoring providers is managed from **Fabric Workspace settings > Monitoring**.
+Fabric Workspace Monitoring remains visible but is disabled by default with `fabric_workspace_monitoring_enabled=false`. Its implementation relies on the Fabric portal's internal regional metadata endpoint, which rejects hosted third-party OBO clients and is not included in the public Fabric REST specification. The saved regional URL is retained for a future migration, but automated creation must remain disabled until Fabric provides an official API. Log Analytics remains the supported automated monitoring provider.
 
 ![Settings](docs/images/06-settings.png)
 
@@ -78,7 +78,7 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Nested Root Folders** | Support for nested folder paths like `Project/SubProject/` |
 | **Tag Management** | Create tags on the fly, apply/remove in batch; Use Case tags loaded dynamically from domain |
 | **Domain Assignment** | Assign workspaces to domains and subdomains individually or in bulk |
-| **Workspace Monitoring** | Select exactly one of Log Analytics or Fabric Workspace Monitoring during creation, with an optional mandatory policy from Settings |
+| **Workspace Monitoring** | Configure optional or policy-required Log Analytics during workspace creation; Fabric Workspace Monitoring is preserved but temporarily unavailable pending an official API |
 | **Role Assignments** | Pre-defined Entra ID security groups per role (Admin, Contributor, Viewer) |
 | **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
 | **Developer Workspaces** | Create feature workspaces for developers from a Main template with individual GitHub branches and connections |

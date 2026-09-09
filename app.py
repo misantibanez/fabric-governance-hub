@@ -77,6 +77,7 @@ DEFAULT_SETTINGS = {
     "workspace_monitoring_required": True,
     "log_analytics_workspace_resource_id": "",
     "fabric_monitoring_api_base_url": "",
+    "fabric_workspace_monitoring_enabled": False,
     "compliance_domain_required_tag": "DHUB",
 }
 _settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTINGS)
@@ -1921,6 +1922,7 @@ def settings_page():
             "workspace_monitoring_required": bool(request.form.get("workspace_monitoring_required")),
             "log_analytics_workspace_resource_id": request.form.get("log_analytics_workspace_resource_id", "").strip(),
             "fabric_monitoring_api_base_url": request.form.get("fabric_monitoring_api_base_url", "").strip().rstrip("/"),
+            "fabric_workspace_monitoring_enabled": False,
             "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
         expected_etag = request.form.get("settings_etag") or None

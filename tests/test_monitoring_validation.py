@@ -57,8 +57,25 @@ class MonitoringValidationTests(unittest.TestCase):
                 {}, "both", {}, lambda *args, **kwargs: None, {}
             )
 
+    def test_fabric_monitoring_is_disabled_by_default(self):
+        with self.assertRaisesRegex(
+            MonitoringValidationError, "temporarily unavailable"
+        ):
+            validate_monitoring_selection(
+                {
+                    "fabric_monitoring_api_base_url": (
+                        "https://wabi-west-us3-a-primary-redirect.analysis.windows.net"
+                    )
+                },
+                PROVIDER_FABRIC,
+                {},
+                lambda *args, **kwargs: None,
+                {"Authorization": "Bearer token"},
+            )
+
     def test_validates_fabric_cluster_and_power_bi_token(self):
         settings = {
+            "fabric_workspace_monitoring_enabled": True,
             "fabric_monitoring_api_base_url": (
                 "https://wabi-west-us3-a-primary-redirect.analysis.windows.net/"
             )
@@ -81,7 +98,10 @@ class MonitoringValidationTests(unittest.TestCase):
             with self.subTest(invalid_url=invalid_url):
                 with self.assertRaisesRegex(MonitoringValidationError, "cluster URL"):
                     validate_monitoring_selection(
-                        {"fabric_monitoring_api_base_url": invalid_url},
+                        {
+                            "fabric_workspace_monitoring_enabled": True,
+                            "fabric_monitoring_api_base_url": invalid_url,
+                        },
                         PROVIDER_FABRIC,
                         {},
                         lambda *args, **kwargs: None,

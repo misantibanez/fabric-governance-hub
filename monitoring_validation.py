@@ -7,6 +7,7 @@ import requests
 
 SETTING_NAME = "log_analytics_workspace_resource_id"
 FABRIC_API_SETTING_NAME = "fabric_monitoring_api_base_url"
+FABRIC_ENABLED_SETTING_NAME = "fabric_workspace_monitoring_enabled"
 REQUIRED_SETTING_NAME = "workspace_monitoring_required"
 PROVIDER_NONE = "none"
 PROVIDER_LOG_ANALYTICS = "log_analytics"
@@ -58,6 +59,13 @@ def monitoring_is_required(settings):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def fabric_monitoring_is_enabled(settings):
+    value = settings.get(FABRIC_ENABLED_SETTING_NAME, False)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def validate_monitoring_selection(
     settings, provider, azure_headers, request_get, power_bi_headers
 ):
@@ -75,6 +83,11 @@ def validate_monitoring_selection(
         return MonitoringSelection(
             PROVIDER_LOG_ANALYTICS,
             validate_monitoring_configuration(settings, azure_headers, request_get),
+        )
+    if not fabric_monitoring_is_enabled(settings):
+        raise MonitoringValidationError(
+            "Fabric Workspace Monitoring is temporarily unavailable until Fabric "
+            "provides an official API. Select Log Analytics instead."
         )
 
     api_base_url = str(settings.get(FABRIC_API_SETTING_NAME, "")).strip().rstrip("/")

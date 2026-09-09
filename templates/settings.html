@@ -128,9 +128,9 @@
                 <div class="tag-group">
                     <label>Fabric monitoring metadata cluster URL</label>
                     <div class="add-row">
-                        <input type="url" name="fabric_monitoring_api_base_url" value="{{ settings.fabric_monitoring_api_base_url or '' }}" placeholder="https://wabi-...-redirect.analysis.windows.net">
+                        <input type="url" name="fabric_monitoring_api_base_url" value="{{ settings.fabric_monitoring_api_base_url or '' }}" placeholder="https://wabi-...-redirect.analysis.windows.net" {% if not settings.fabric_workspace_monitoring_enabled %}readonly aria-disabled="true"{% endif %}>
                     </div>
-                    <p style="margin-top: 6px; margin-bottom: 0;">Regional URL used by Fabric Workspace settings for platform monitoring.</p>
+                    <p style="margin-top: 6px; margin-bottom: 0;">{% if settings.fabric_workspace_monitoring_enabled %}Regional URL used by Fabric Workspace settings for platform monitoring.{% else %}Temporarily unavailable. The saved URL is preserved until Fabric provides an official API.{% endif %}</p>
                 </div>
             </div>
 

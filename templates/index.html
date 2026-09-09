@@ -202,8 +202,8 @@
                         <span><strong>Log Analytics</strong> — <span style="color: #6D6E71;">{{ settings.log_analytics_workspace_resource_id.split('/')[-1] if settings.log_analytics_workspace_resource_id else 'configuration required in Settings' }}</span></span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #323130;">
-                        <input type="radio" name="monitoring_provider" value="fabric_workspace_monitoring" {% if settings.workspace_monitoring_required %}required{% endif %} {% if not settings.fabric_monitoring_api_base_url %}disabled{% endif %}>
-                        <span><strong>Fabric Workspace Monitoring</strong> — <span style="color: #6D6E71;">{% if settings.fabric_monitoring_api_base_url %}creates a managed Eventhouse and KQL database{% else %}configuration required in Settings{% endif %}</span></span>
+                        <input type="radio" name="monitoring_provider" value="fabric_workspace_monitoring" {% if not settings.fabric_workspace_monitoring_enabled or not settings.fabric_monitoring_api_base_url %}disabled{% elif settings.workspace_monitoring_required %}required{% endif %}>
+                        <span><strong>Fabric Workspace Monitoring</strong> — <span style="color: #6D6E71;">{% if not settings.fabric_workspace_monitoring_enabled %}temporarily unavailable until Fabric provides an official API{% elif settings.fabric_monitoring_api_base_url %}creates a managed Eventhouse and KQL database{% else %}configuration required in Settings{% endif %}</span></span>
                     </label>
                 </div>
 

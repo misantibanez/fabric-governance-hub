@@ -90,6 +90,33 @@ class MonitoringPreflightRouteTests(unittest.TestCase):
             messages,
         )
 
+    @patch.object(application.requests, "post")
+    @patch.object(application, "preflight_mpe_configuration", return_value=())
+    @patch.object(
+        application,
+        "get_powerbi_headers",
+        return_value={"Authorization": "Bearer power-bi"},
+    )
+    @patch.object(application, "load_settings", return_value=application.DEFAULT_SETTINGS)
+    def test_disabled_fabric_monitoring_blocks_before_workspace_creation(
+        self, _load_settings, _get_powerbi_headers, _mpe_preflight, post
+    ):
+        response = self.client.post(
+            "/create-workspace",
+            data={
+                "name": "blocked-workspace",
+                "capacity_id": "capacity",
+                "monitoring_provider": "fabric_workspace_monitoring",
+            },
+        )
+
+        self.assertEqual(302, response.status_code)
+        self.assertTrue(response.headers["Location"].endswith("/create-workspace-form"))
+        post.assert_not_called()
+        with self.client.session_transaction() as session:
+            messages = session.get("_flashes", [])
+        self.assertIn("temporarily unavailable", messages[0][1])
+
     @patch.object(application, "preflight_mpe_configuration", return_value=())
     @patch.object(application, "get_powerbi_headers", return_value={})
     @patch.object(application, "load_settings", return_value={
@@ -301,7 +328,8 @@ class MonitoringPreflightRouteTests(unittest.TestCase):
         self.assertIn(b'id="workspace-monitoring"', response.data)
         self.assertIn(b"governance-logs", response.data)
         self.assertIn(b'value="log_analytics" required', response.data)
-        self.assertIn(b'value="fabric_workspace_monitoring" required', response.data)
+        self.assertIn(b'value="fabric_workspace_monitoring" disabled', response.data)
+        self.assertIn(b"temporarily unavailable until Fabric provides an official API", response.data)
         self.assertNotIn(b'value="none"', response.data)
         self.assertIn(b'href="/settings#workspace-monitoring"', response.data)
         self.assertNotIn(b'name="la_subscription_id"', response.data)
@@ -329,6 +357,7 @@ class MonitoringPreflightRouteTests(unittest.TestCase):
             saved_settings["log_analytics_workspace_resource_id"],
         )
         self.assertTrue(saved_settings["workspace_monitoring_required"])
+        self.assertFalse(saved_settings["fabric_workspace_monitoring_enabled"])
         self.assertEqual(
             "https://wabi-west-us3-a-primary-redirect.analysis.windows.net",
             saved_settings["fabric_monitoring_api_base_url"],
@@ -354,6 +383,8 @@ class MonitoringPreflightRouteTests(unittest.TestCase):
         self.assertIn(b'id="workspace-monitoring"', response.data)
         self.assertIn(LOG_ANALYTICS_ID.encode(), response.data)
         self.assertIn(b"wabi-west-us3-a-primary-redirect", response.data)
+        self.assertIn(b'readonly aria-disabled="true"', response.data)
+        self.assertIn(b"The saved URL is preserved", response.data)
 
 
 if __name__ == "__main__":
