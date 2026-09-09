@@ -121,6 +121,19 @@ def configure_workspace_monitoring(workspace_id, configuration, pbi_headers):
     ]
 
 
+def _is_fabric_artifact_operation_conflict(response):
+    if response.status_code != 409:
+        return False
+    try:
+        error = response.json().get("error", {})
+    except (AttributeError, ValueError):
+        return "ArtifactOperationConflict" in response.text
+    return (
+        error.get("code") == "ArtifactOperationConflict"
+        or error.get("pbi.error", {}).get("code") == "ArtifactOperationConflict"
+    )
+
+
 def configure_fabric_workspace_monitoring(workspace_id, configuration, pbi_headers):
     url = (
         f"{configuration.api_base_url}/metadata/platformMonitoring/workspace/"
@@ -163,21 +176,29 @@ def configure_fabric_workspace_monitoring(workspace_id, configuration, pbi_heade
             "Open Workspace settings > Monitoring and verify the Eventhouse."
         ]
 
-    headers["ActivityId"] = str(uuid.uuid4())
-    headers["RequestId"] = str(uuid.uuid4())
-    try:
-        enable_response = requests.patch(
-            f"{url}?calledOnDatabaseCreation=true",
-            headers=headers,
-            json={"ingestionState": "Enabled"},
-            timeout=120,
-        )
-    except requests.RequestException as error:
-        return [
-            "Fabric Workspace Monitoring Eventhouse was created, but the logging "
-            f"request could not reach the metadata cluster: {error}. Open Workspace "
-            "settings > Monitoring and turn on Log workspace activity."
-        ]
+    retry_delays = (1, 2, 4, 8, 8)
+    for attempt in range(len(retry_delays) + 1):
+        headers["ActivityId"] = str(uuid.uuid4())
+        headers["RequestId"] = str(uuid.uuid4())
+        try:
+            enable_response = requests.patch(
+                f"{url}?calledOnDatabaseCreation=true",
+                headers=headers,
+                json={"ingestionState": "Enabled"},
+                timeout=120,
+            )
+        except requests.RequestException as error:
+            return [
+                "Fabric Workspace Monitoring Eventhouse was created, but the logging "
+                f"request could not reach the metadata cluster: {error}. Open Workspace "
+                "settings > Monitoring and turn on Log workspace activity."
+            ]
+        if enable_response.status_code == 200:
+            break
+        if not _is_fabric_artifact_operation_conflict(enable_response):
+            break
+        if attempt < len(retry_delays):
+            time.sleep(retry_delays[attempt])
     if enable_response.status_code != 200:
         return [
             "Fabric Workspace Monitoring Eventhouse was created, but logging could "

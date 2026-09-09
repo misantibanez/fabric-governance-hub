@@ -25,6 +25,16 @@
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #F37021; }
         .btn-create { background: #F37021; color: white; border: none; padding: 10px 24px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
         .btn-create:hover { background: #d4601a; }
+        .btn-create:disabled { background: #a19f9d; cursor: wait; }
+        .creation-overlay { position: fixed; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(50, 49, 48, 0.58); }
+        .creation-overlay.visible { display: flex; }
+        .creation-status { width: min(460px, 100%); padding: 28px; border-radius: 8px; background: white; box-shadow: 0 8px 28px rgba(0,0,0,0.24); text-align: center; }
+        .creation-spinner { width: 36px; height: 36px; margin: 0 auto 18px; border: 4px solid #edebe9; border-top-color: #F37021; border-radius: 50%; animation: spin 0.9s linear infinite; }
+        .creation-status h2 { margin-bottom: 8px; color: #323130; font-size: 20px; }
+        .creation-status p { min-height: 40px; color: #605e5c; font-size: 14px; line-height: 1.45; }
+        .creation-status small { display: block; margin-top: 14px; color: #8a8886; font-size: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .creation-spinner { animation-duration: 1.8s; } }
     </style>
 </head>
 <body>
@@ -51,7 +61,7 @@
         <!-- Create Workspace -->
         <div class="form-section">
             <h2>Create Workspace</h2>
-            <form method="POST" action="/create-workspace">
+            <form id="create-workspace-form" method="POST" action="/create-workspace">
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="name">Workspace Name *</label>
@@ -248,8 +258,17 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn-create">Create Workspace</button>
+                <button id="create-workspace-button" type="submit" class="btn-create">Create Workspace</button>
             </form>
+        </div>
+    </div>
+
+    <div id="creation-overlay" class="creation-overlay" role="status" aria-live="polite" aria-hidden="true">
+        <div class="creation-status">
+            <div class="creation-spinner" aria-hidden="true"></div>
+            <h2>Creating workspace</h2>
+            <p id="creation-stage">Validating governance settings...</p>
+            <small>This can take a minute. Keep this page open.</small>
         </div>
     </div>
 
@@ -280,6 +299,36 @@
                         container.innerHTML = '<span style="font-size: 12px; color: #d13438;">Error loading tags</span>';
                     });
             });
+
+            const form = document.getElementById('create-workspace-form');
+            const submitButton = document.getElementById('create-workspace-button');
+            const overlay = document.getElementById('creation-overlay');
+            const stage = document.getElementById('creation-stage');
+            form.addEventListener('submit', function() {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Creating...';
+                overlay.classList.add('visible');
+                overlay.setAttribute('aria-hidden', 'false');
+
+                const stages = [
+                    [1500, 'Creating the workspace and assigning capacity...'],
+                    [5000, 'Provisioning identity, access, and governance settings...'],
+                    [10000, 'Configuring workspace monitoring and initial items...'],
+                    [25000, 'Fabric is still finishing the setup. Almost there...']
+                ];
+                stages.forEach(([delay, message]) => {
+                    window.setTimeout(() => { stage.textContent = message; }, delay);
+                });
+            });
+        });
+
+        window.addEventListener('pageshow', function() {
+            const submitButton = document.getElementById('create-workspace-button');
+            const overlay = document.getElementById('creation-overlay');
+            submitButton.disabled = false;
+            submitButton.textContent = 'Create Workspace';
+            overlay.classList.remove('visible');
+            overlay.setAttribute('aria-hidden', 'true');
         });
 
         function createTag() {
