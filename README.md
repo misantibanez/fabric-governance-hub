@@ -52,7 +52,9 @@ Review and update personal and standard gateway installation policies, manage au
 ![Gateway Governance](docs/images/11-gateway-governance.png)
 
 ### Settings — Configure Once, Use Everywhere
-Define tag groups (Environment, Branch), managed private endpoint resource IDs, the mandatory Log Analytics workspace, and compliance rules in one place. The entire app adapts — Create Workspace forms, Workspace Map filters, and compliance checks all stay consistent.
+Define tag groups (Environment, Branch), managed private endpoint resource IDs, monitoring policy, and compliance rules in one place. Monitoring can be optional or mandatory; workspace creation permits no monitoring when policy allows it, or Log Analytics.
+
+Fabric Workspace Monitoring remains visible but is disabled by default with `fabric_workspace_monitoring_enabled=false`. Its implementation relies on the Fabric portal's internal regional metadata endpoint, which rejects hosted third-party OBO clients and is not included in the public Fabric REST specification. The saved regional URL is retained for a future migration, but automated creation must remain disabled until Fabric provides an official API. Log Analytics remains the supported automated monitoring provider.
 
 ![Settings](docs/images/06-settings.png)
 
@@ -76,7 +78,7 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Nested Root Folders** | Support for nested folder paths like `Project/SubProject/` |
 | **Tag Management** | Create tags on the fly, apply/remove in batch; Use Case tags loaded dynamically from domain |
 | **Domain Assignment** | Assign workspaces to domains and subdomains individually or in bulk |
-| **Log Analytics** | Configure Azure Log Analytics workspace integration via Power BI admin API |
+| **Workspace Monitoring** | Configure optional or policy-required Log Analytics during workspace creation; Fabric Workspace Monitoring is preserved but temporarily unavailable pending an official API |
 | **Role Assignments** | Pre-defined Entra ID security groups per role (Admin, Contributor, Viewer) |
 | **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
 | **Developer Workspaces** | Create feature workspaces for developers from a Main template with individual GitHub branches and connections |
@@ -339,7 +341,7 @@ Keep all secure parameter values outside source control. Use a secure pipeline v
 ```
 app.py                          ← Flask routes, OBO token exchange, and API logic
 gateway_session.py              ← Persistent isolated PowerShell session manager
-monitoring_validation.py        ← Log Analytics workspace provisioning preflight
+monitoring_validation.py        ← Exclusive monitoring policy and provider preflight
 mpe_validation.py               ← Managed private endpoint provisioning preflight
 settings_repository.py          ← App Configuration and local settings backends
 workspace_deletion.py            ← MPE-first workspace deletion orchestration

@@ -3,6 +3,7 @@ import json
 import secrets
 import threading
 import time
+import uuid
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 import msal
@@ -10,7 +11,14 @@ import requests
 from azure.identity import DeviceCodeCredential
 from gateway_session import GatewayPowerShellSession, GatewaySessionError
 from mpe_validation import MpeValidationError, mpe_audit_record, validate_mpe_configuration
-from monitoring_validation import MonitoringValidationError, validate_monitoring_configuration
+from monitoring_validation import (
+    PROVIDER_FABRIC,
+    PROVIDER_LOG_ANALYTICS,
+    PROVIDER_NONE,
+    MonitoringValidationError,
+    monitoring_is_required,
+    validate_monitoring_selection,
+)
 from settings_repository import SettingsConflictError, create_settings_repository
 from workspace_deletion import (
     WorkspaceDeletionError,
@@ -66,7 +74,10 @@ DEFAULT_SETTINGS = {
     "branches": ["feature", "main"],
     "mpe_cognitive_services_resource_id": "",
     "mpe_keyvault_resource_id": "",
+    "workspace_monitoring_required": True,
     "log_analytics_workspace_resource_id": "",
+    "fabric_monitoring_api_base_url": "",
+    "fabric_workspace_monitoring_enabled": False,
     "compliance_domain_required_tag": "DHUB",
 }
 _settings_repository = create_settings_repository(SETTINGS_FILE, DEFAULT_SETTINGS)
@@ -85,11 +96,16 @@ def preflight_mpe_configuration(settings, include_cognitive_services):
     )
 
 
-def preflight_monitoring_configuration(settings):
-    return validate_monitoring_configuration(
+def preflight_monitoring_selection(settings, provider, pbi_headers):
+    azure_headers = {}
+    if str(provider).strip().lower() == PROVIDER_LOG_ANALYTICS:
+        azure_headers = {"Authorization": f"Bearer {get_azure_token()}"}
+    return validate_monitoring_selection(
         settings,
-        {"Authorization": f"Bearer {get_azure_token()}"},
+        provider,
+        azure_headers,
         requests.get,
+        pbi_headers,
     )
 
 
@@ -104,6 +120,99 @@ def configure_workspace_monitoring(workspace_id, configuration, pbi_headers):
     return [
         f"Failed to configure Log Analytics: {response.status_code} - {response.text}"
     ]
+
+
+def _is_fabric_artifact_operation_conflict(response):
+    if response.status_code != 409:
+        return False
+    try:
+        error = response.json().get("error", {})
+    except (AttributeError, ValueError):
+        return "ArtifactOperationConflict" in response.text
+    return (
+        error.get("code") == "ArtifactOperationConflict"
+        or error.get("pbi.error", {}).get("code") == "ArtifactOperationConflict"
+    )
+
+
+def configure_fabric_workspace_monitoring(workspace_id, configuration, pbi_headers):
+    url = (
+        f"{configuration.api_base_url}/metadata/platformMonitoring/workspace/"
+        f"{workspace_id}"
+    )
+    headers = {
+        **pbi_headers,
+        "Content-Type": "application/json",
+        "ActivityId": str(uuid.uuid4()),
+        "RequestId": str(uuid.uuid4()),
+        "X-PowerBI-HostEnv": "Power BI Web App",
+    }
+    try:
+        create_response = requests.post(
+            url,
+            headers=headers,
+            json={"artifactType": "KustoDatabase", "workloadPayload": "{}"},
+            timeout=120,
+        )
+    except requests.RequestException as error:
+        return [
+            "Fabric Workspace Monitoring creation could not reach the configured "
+            f"metadata cluster: {error}. Verify the cluster URL and retry."
+        ]
+    if create_response.status_code != 200:
+        return [
+            "Fabric Workspace Monitoring creation failed: "
+            f"{create_response.status_code} - {create_response.text[:300]}. "
+            "Verify the regional metadata URL, capacity support, and workspace permissions."
+        ]
+
+    create_result = create_response.json()
+    artifact = create_result.get("artifact", {})
+    if (
+        artifact.get("systemArtifactType") != "PlatformMonitoring"
+        or artifact.get("artifactType") != "KustoEventHouse"
+    ):
+        return [
+            "Fabric Workspace Monitoring creation returned an unexpected artifact. "
+            "Open Workspace settings > Monitoring and verify the Eventhouse."
+        ]
+
+    retry_delays = (1, 2, 4, 8, 8)
+    for attempt in range(len(retry_delays) + 1):
+        headers["ActivityId"] = str(uuid.uuid4())
+        headers["RequestId"] = str(uuid.uuid4())
+        try:
+            enable_response = requests.patch(
+                f"{url}?calledOnDatabaseCreation=true",
+                headers=headers,
+                json={"ingestionState": "Enabled"},
+                timeout=120,
+            )
+        except requests.RequestException as error:
+            return [
+                "Fabric Workspace Monitoring Eventhouse was created, but the logging "
+                f"request could not reach the metadata cluster: {error}. Open Workspace "
+                "settings > Monitoring and turn on Log workspace activity."
+            ]
+        if enable_response.status_code == 200:
+            break
+        if not _is_fabric_artifact_operation_conflict(enable_response):
+            break
+        if attempt < len(retry_delays):
+            time.sleep(retry_delays[attempt])
+    if enable_response.status_code != 200:
+        return [
+            "Fabric Workspace Monitoring Eventhouse was created, but logging could "
+            f"not be enabled: {enable_response.status_code} - "
+            f"{enable_response.text[:300]}. Open Workspace settings > Monitoring "
+            "and turn on Log workspace activity."
+        ]
+    if enable_response.json().get("ingestionState") != "Enabled":
+        return [
+            "Fabric Workspace Monitoring did not report logging as enabled. Open "
+            "Workspace settings > Monitoring and turn on Log workspace activity."
+        ]
+    return []
 
 
 def create_managed_private_endpoints(workspace_id, workspace_name, targets, fabric_headers):
@@ -736,8 +845,19 @@ def create_workspace():
         for message in error.messages:
             flash(message, "mpe-error")
         return redirect(url_for("create_workspace_form"))
+    default_monitoring_provider = (
+        PROVIDER_LOG_ANALYTICS if monitoring_is_required(settings) else PROVIDER_NONE
+    )
+    monitoring_provider = request.form.get(
+        "monitoring_provider", default_monitoring_provider
+    )
+    pbi_headers = (
+        get_powerbi_headers() if monitoring_provider != PROVIDER_NONE else {}
+    )
     try:
-        monitoring_configuration = preflight_monitoring_configuration(settings)
+        monitoring_selection = preflight_monitoring_selection(
+            settings, monitoring_provider, pbi_headers
+        )
     except MonitoringValidationError as error:
         flash(str(error), "monitoring-error")
         return redirect(url_for("create_workspace_form"))
@@ -748,7 +868,6 @@ def create_workspace():
     )
 
     fabric_headers = get_headers()
-    pbi_headers = get_powerbi_headers()
 
     # 1. Create workspace (Fabric API)
     body = {"displayName": name}
@@ -817,10 +936,16 @@ def create_workspace():
                 f"Failed to apply tags: {resp_tags.status_code} - {resp_tags.text}"
             )
 
-    # 5. Configure mandatory Log Analytics monitoring (Power BI admin API)
-    la_errors = configure_workspace_monitoring(
-        workspace_id, monitoring_configuration, pbi_headers
-    )
+    # 5. Configure the selected mutually exclusive monitoring integration
+    monitoring_errors = []
+    if monitoring_selection.provider == PROVIDER_LOG_ANALYTICS:
+        monitoring_errors = configure_workspace_monitoring(
+            workspace_id, monitoring_selection.configuration, pbi_headers
+        )
+    elif monitoring_selection.provider == PROVIDER_FABRIC:
+        monitoring_errors = configure_fabric_workspace_monitoring(
+            workspace_id, monitoring_selection.configuration, pbi_headers
+        )
 
     # 6. Assign role groups (Fabric API)
     roles = {
@@ -987,14 +1112,22 @@ def create_workspace():
         else:
             git_errors.append("Could not parse owner/repo from URL")
 
-    all_errors = tag_errors + la_errors + role_errors + item_errors + mpe_errors + git_errors
+    all_errors = tag_errors + monitoring_errors + role_errors + item_errors + mpe_errors + git_errors
     if all_errors:
         flash(
             f"Workspace created but some assignments failed: {'; '.join(all_errors)}",
             "error",
         )
     else:
-        flash(f"Workspace '{name}' created successfully!", "success")
+        monitoring_label = {
+            PROVIDER_NONE: "without monitoring",
+            PROVIDER_LOG_ANALYTICS: "with Log Analytics",
+            PROVIDER_FABRIC: "with Fabric Workspace Monitoring",
+        }[monitoring_selection.provider]
+        flash(
+            f"Workspace '{name}' created successfully {monitoring_label}!",
+            "success",
+        )
     return redirect(url_for("create_workspace_form"))
 
 
@@ -1325,19 +1458,41 @@ def developer_workspaces():
         main_workspaces=main_workspaces,
         capacity_map_json=json.dumps(capacity_map),
         domain_map_json=json.dumps(domain_map),
+        settings=load_settings(),
     )
 
 
 @app.route("/create-developer-workspaces", methods=["POST"])
 def create_developer_workspaces():
     from flask import jsonify
+    settings = load_settings()
     try:
-        mpe_targets = preflight_mpe_configuration(load_settings(), False)
+        mpe_targets = preflight_mpe_configuration(settings, False)
     except MpeValidationError as error:
         return jsonify({
             "ok": False,
             "error": " ".join(error.messages),
             "settings_url": url_for("settings_page", _anchor="managed-private-endpoints"),
+        }), 400
+
+    default_monitoring_provider = (
+        PROVIDER_LOG_ANALYTICS if monitoring_is_required(settings) else PROVIDER_NONE
+    )
+    monitoring_provider = request.form.get(
+        "monitoring_provider", default_monitoring_provider
+    )
+    pbi_headers = (
+        get_powerbi_headers() if monitoring_provider != PROVIDER_NONE else {}
+    )
+    try:
+        monitoring_selection = preflight_monitoring_selection(
+            settings, monitoring_provider, pbi_headers
+        )
+    except MonitoringValidationError as error:
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+            "settings_url": url_for("settings_page", _anchor="workspace-monitoring"),
         }), 400
 
     dev_count = int(request.form.get("dev_count", 0))
@@ -1363,6 +1518,7 @@ def create_developer_workspaces():
             "main_ws_id": request.form["main_workspace_id"],
             "developers": developers,
             "mpe_targets": mpe_targets,
+            "monitoring_selection": monitoring_selection,
         }
     session["dev_job_id"] = job_id
     return jsonify({"ok": True})
@@ -1384,7 +1540,12 @@ def dev_ws_stream():
 
     def generate():
         fabric_headers = get_headers()
-        pbi_headers = get_powerbi_headers()
+        monitoring_selection = job["monitoring_selection"]
+        pbi_headers = (
+            get_powerbi_headers()
+            if monitoring_selection.provider != PROVIDER_NONE
+            else {}
+        )
         main_ws_id = job["main_ws_id"]
         developers = job["developers"]
         mpe_targets = job["mpe_targets"]
@@ -1429,15 +1590,6 @@ def dev_ws_stream():
             headers=fabric_headers,
         )
         role_assignments = resp_roles.json().get("value", []) if resp_roles.status_code == 200 else []
-
-        # Get Log Analytics config
-        log_analytics_config = None
-        resp_la = requests.get(
-            f"https://api.powerbi.com/v1.0/myorg/admin/groups/{main_ws_id}",
-            headers=pbi_headers,
-        )
-        if resp_la.status_code == 200:
-            log_analytics_config = resp_la.json().get("logAnalyticsWorkspace")
 
         # Swap Main tag for feature
         feature_tag_ids = []
@@ -1596,14 +1748,24 @@ def dev_ws_stream():
             else:
                 yield f"data: [{alias}]   ✓ Managed private endpoints created\n\n"
 
-            # 3g. Log Analytics
-            if log_analytics_config:
-                requests.patch(
-                    f"https://api.powerbi.com/v1.0/myorg/admin/groups/{dev_ws_id}",
-                    headers={**pbi_headers, "Content-Type": "application/json"},
-                    json={"logAnalyticsWorkspace": log_analytics_config},
+            # 3g. Monitoring
+            monitoring_errors = []
+            if monitoring_selection.provider == PROVIDER_LOG_ANALYTICS:
+                monitoring_errors = configure_workspace_monitoring(
+                    dev_ws_id, monitoring_selection.configuration, pbi_headers
                 )
+            elif monitoring_selection.provider == PROVIDER_FABRIC:
+                monitoring_errors = configure_fabric_workspace_monitoring(
+                    dev_ws_id, monitoring_selection.configuration, pbi_headers
+                )
+            if monitoring_errors:
+                dev_errors.extend(monitoring_errors)
+                for monitoring_error in monitoring_errors:
+                    yield f"data: [{alias}]   ERROR: {monitoring_error}\n\n"
+            elif monitoring_selection.provider == PROVIDER_LOG_ANALYTICS:
                 yield f"data: [{alias}]   ✓ Log Analytics configured\n\n"
+            elif monitoring_selection.provider == PROVIDER_FABRIC:
+                yield f"data: [{alias}]   ✓ Fabric Workspace Monitoring enabled\n\n"
 
             # 4. Git integration
             yield f"data: [{alias}] Step 4: Git integration\n\n"
@@ -1757,7 +1919,10 @@ def settings_page():
             "branches": [x.strip() for x in request.form.get("branches", "").split(",") if x.strip()],
             "mpe_cognitive_services_resource_id": request.form.get("mpe_cognitive_services_resource_id", "").strip(),
             "mpe_keyvault_resource_id": request.form.get("mpe_keyvault_resource_id", "").strip(),
+            "workspace_monitoring_required": bool(request.form.get("workspace_monitoring_required")),
             "log_analytics_workspace_resource_id": request.form.get("log_analytics_workspace_resource_id", "").strip(),
+            "fabric_monitoring_api_base_url": request.form.get("fabric_monitoring_api_base_url", "").strip().rstrip("/"),
+            "fabric_workspace_monitoring_enabled": False,
             "compliance_domain_required_tag": request.form.get("compliance_domain_required_tag", "").strip(),
         }
         expected_etag = request.form.get("settings_etag") or None

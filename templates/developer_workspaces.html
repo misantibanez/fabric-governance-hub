@@ -94,7 +94,25 @@
             </div>
 
             <div class="card">
-                <h2>2. Add Developers</h2>
+                <h2>2. Workspace Monitoring</h2>
+                <p>Select exactly one option{% if settings.workspace_monitoring_required %}; monitoring is required by policy{% endif %}.</p>
+                <div style="display: grid; gap: 10px;">
+                    {% if not settings.workspace_monitoring_required %}
+                    <label><input type="radio" name="monitoring_provider" value="none" checked> <strong>No monitoring</strong></label>
+                    {% endif %}
+                    <label>
+                        <input type="radio" name="monitoring_provider" value="log_analytics" {% if settings.workspace_monitoring_required %}required{% endif %} {% if not settings.log_analytics_workspace_resource_id %}disabled{% endif %}>
+                        <strong>Log Analytics</strong> — {{ settings.log_analytics_workspace_resource_id.split('/')[-1] if settings.log_analytics_workspace_resource_id else 'configuration required in Settings' }}
+                    </label>
+                    <label>
+                        <input type="radio" name="monitoring_provider" value="fabric_workspace_monitoring" {% if not settings.fabric_workspace_monitoring_enabled or not settings.fabric_monitoring_api_base_url %}disabled{% elif settings.workspace_monitoring_required %}required{% endif %}>
+                        <strong>Fabric Workspace Monitoring</strong> — {% if not settings.fabric_workspace_monitoring_enabled %}temporarily unavailable until Fabric provides an official API{% elif settings.fabric_monitoring_api_base_url %}managed Eventhouse and KQL database{% else %}configuration required in Settings{% endif %}
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>3. Add Developers</h2>
                 <p>Each developer will get a workspace with a feature branch and their own GitHub connection.</p>
 
                 <table id="dev-table">
@@ -118,13 +136,14 @@
             </div>
 
             <div class="card">
-                <h2>3. Summary</h2>
+                <h2>4. Summary</h2>
                 <p>The following will be created for each developer:</p>
                 <ul style="font-size: 13px; padding-left: 20px; color: #323130; line-height: 1.8;">
                     <li>GitHub branch <code>feature/{alias}</code> (from main)</li>
                     <li>Fabric GitHub connection <code>cx-gh-{alias}</code></li>
                     <li>Workspace with same config as Main (tag: <strong>feature</strong> instead of <strong>Main</strong>)</li>
                     <li>Workspace Identity + Managed Private Endpoints</li>
+                    <li>Selected centralized workspace monitoring integration</li>
                     <li>Git integration with developer's branch and connection</li>
                 </ul>
                 <br>
