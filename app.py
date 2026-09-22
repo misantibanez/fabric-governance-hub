@@ -19,6 +19,12 @@ from monitoring_validation import (
     monitoring_is_required,
     validate_monitoring_selection,
 )
+from permission_audit import (
+    PermissionAuditError,
+    audit_principal_access,
+    fetch_effective_principals,
+    resolve_principal as resolve_audit_principal,
+)
 from settings_repository import SettingsConflictError, create_settings_repository
 from workspace_deletion import (
     WorkspaceDeletionError,
@@ -1908,6 +1914,41 @@ def workspace_compliance():
         "workspace_compliance.html",
         compliance_data=compliance_data,
         compliance_tag=compliance_tag,
+    )
+
+
+@app.route("/permission-audit")
+def permission_audit():
+    query = request.args.get("principal", "").strip()
+    result = None
+    error = None
+    if query:
+        try:
+            graph_headers = {"Authorization": f"Bearer {get_graph_token()}"}
+            fabric_headers = get_headers()
+            principal = resolve_audit_principal(query, graph_headers, requests.get)
+            effective_principals = fetch_effective_principals(
+                principal, graph_headers, requests.get
+            )
+            pbi_headers = get_powerbi_headers()
+            workspaces = fetch_workspaces_admin(pbi_headers) or fetch_workspaces(
+                fabric_headers
+            )
+            result = audit_principal_access(
+                principal,
+                effective_principals,
+                workspaces,
+                fabric_headers,
+                requests.get,
+            )
+        except (PermissionAuditError, requests.RequestException) as audit_error:
+            error = str(audit_error)
+
+    return render_template(
+        "permission_audit.html",
+        query=query,
+        result=result,
+        error=error,
     )
 
 

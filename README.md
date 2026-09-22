@@ -46,6 +46,9 @@ Check every workspace against compliance requirements: **Git integration**, **Wo
 
 ![Workspace Compliance](docs/images/10-workspace-compliance.png)
 
+### Permission Audit — Trace Effective Access
+Search for a Microsoft Entra user or group to see its effective workspace roles and OneLake data access across Lakehouses. The audit includes direct assignments, access inherited through nested groups, OneLake role actions and paths, partial API warnings, and CSV export.
+
 ### Gateway Governance — Control Tenant-Wide Gateway Access
 Review and update personal and standard gateway installation policies, manage authorized standard gateway installers, and inspect registered gateway clusters. The module resolves Entra users and nested groups before applying changes. In Azure, user and group resolution preserves the signed-in administrator's delegated identity while Data Gateway operations use a dedicated service principal.
 
@@ -83,6 +86,7 @@ Capacities, workspaces, domains, subdomains, tags, gateways (with contact info a
 | **Git Integration** | Connect workspaces to GitHub with auto-creation of git folders via GitHub API |
 | **Developer Workspaces** | Create feature workspaces for developers from a Main template with individual GitHub branches and connections |
 | **Workspace Compliance** | Check compliance for Git, Identity, MPE, Log Analytics, and Domain — with filters and CSV export |
+| **Permission Audit** | Trace direct and group-inherited workspace roles and OneLake data access roles for a user or group |
 | **Gateway Governance** | Manage tenant gateway policies, authorized installers, nested Entra groups, and gateway cluster inventory |
 | **Workspace Map** | Visual governance dashboard with domain grouping and PII/Reference Assets classification |
 | **Tenant Overview** | Dashboard with KPIs, filters, and CSV export for workspaces and gateways |
@@ -167,8 +171,12 @@ The Entra web application registration must:
 
 - Expose the delegated scope `api://<client-id>/user_impersonation`.
 - Have the redirect URI required by Container Apps authentication.
-- Include delegated permissions for the Fabric, Power BI, and Microsoft Graph operations used by the application.
+- Include Fabric delegated permissions `Workspace.Read.All`, `Item.Read.All`, and `OneLake.Read.All` for permission auditing.
+- Include Microsoft Graph delegated permissions `User.Read.All` and `GroupMember.Read.All` to resolve users, groups, and transitive group membership.
+- Include the delegated Power BI and other Microsoft Graph permissions required by the remaining application features.
 - Receive administrator consent where the tenant requires it.
+
+Permission Audit uses the signed-in administrator's delegated identity. A complete tenant-wide result requires that identity to enumerate the tenant workspaces and to list workspace and OneLake role assignments. Workspaces or Lakehouses that reject an API call remain visible where possible and are reported as partial-result warnings.
 
 ### Gateway Service Principal
 
@@ -343,6 +351,7 @@ app.py                          ← Flask routes, OBO token exchange, and API lo
 gateway_session.py              ← Persistent isolated PowerShell session manager
 monitoring_validation.py        ← Exclusive monitoring policy and provider preflight
 mpe_validation.py               ← Managed private endpoint provisioning preflight
+permission_audit.py             ← Effective workspace and OneLake access aggregation
 settings_repository.py          ← App Configuration and local settings backends
 workspace_deletion.py            ← MPE-first workspace deletion orchestration
 settings.json                   ← Local-only governance configuration fallback
@@ -352,6 +361,7 @@ templates/
   ├── developer_workspaces.html ← Developer workspace provisioning
   ├── tenant_overview.html      ← Tenant Overview dashboard
   ├── workspace_compliance.html ← Compliance checks
+  ├── permission_audit.html     ← User and group effective access audit
   ├── gateway_governance.html   ← Gateway policies and installer management
   ├── modify_workspaces.html    ← Batch workspace operations
   ├── confirm_workspace_deletion.html ← MPE deletion impact confirmation
