@@ -31,17 +31,24 @@ from workspace_deletion import (
     discover_workspace_deletions,
     execute_workspace_deletions,
 )
+from demo_mode import configure_demo_mode, is_demo_mode
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(24)
 
-_tenant_id = os.environ["FABRIC_TENANT_ID"]
+_tenant_id = os.environ.get("FABRIC_TENANT_ID", "demo-tenant" if is_demo_mode() else None)
+if not _tenant_id:
+    raise RuntimeError("FABRIC_TENANT_ID is required outside demo mode.")
 _entra_client_id = os.environ.get("ENTRA_WEB_CLIENT_ID")
 _entra_client_secret = os.environ.get("ENTRA_WEB_CLIENT_SECRET")
 _hosted_auth_enabled = bool(_entra_client_id and _entra_client_secret)
-_credential = None if _hosted_auth_enabled else DeviceCodeCredential(tenant_id=_tenant_id)
+_credential = (
+    None
+    if _hosted_auth_enabled or is_demo_mode()
+    else DeviceCodeCredential(tenant_id=_tenant_id)
+)
 _confidential_client = None
 
 
@@ -241,6 +248,8 @@ def create_managed_private_endpoints(workspace_id, workspace_name, targets, fabr
 
 
 def get_downstream_token(scope):
+    if is_demo_mode():
+        raise RuntimeError("External token acquisition is disabled in demo mode.")
     if not _hosted_auth_enabled:
         return _credential.get_token(scope).token
 
@@ -1978,6 +1987,9 @@ def settings_page():
 
     snapshot = _settings_repository.load()
     return render_template("settings.html", settings=snapshot.settings, settings_etag=snapshot.etag)
+
+
+configure_demo_mode(app)
 
 
 if __name__ == "__main__":

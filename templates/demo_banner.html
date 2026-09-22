@@ -1,0 +1,7 @@
+<aside style="position:relative;z-index:10000;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 20px;background:#fff4ce;border-bottom:2px solid #ffb900;color:#323130;font:600 14px/1.4 'Segoe UI',sans-serif;">
+    <span>Demo environment: sample data only. Changes are disabled.</span>
+    <form action="{{ url_for('demo_logout') }}" method="post" style="margin:0;display:flex;align-items:center;gap:12px;">
+        <span style="font-weight:400;">{{ demo_username }}</span>
+        <button type="submit" style="border:1px solid #8a8886;background:#fff;padding:5px 10px;cursor:pointer;">Sign out</button>
+    </form>
+</aside>

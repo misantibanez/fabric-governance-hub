@@ -143,6 +143,42 @@ Then open **http://127.0.0.1:5000** in your browser.
 
 ![Menu](docs/images/01-menu.png)
 
+### Isolated Demo Environment
+
+The demo runs as a separate, read-only Container App with deterministic sample data and local session authentication. It has no managed identity, Easy Auth configuration, tenant ID, Entra credentials, Gateway credentials, GitHub token, App Configuration endpoint, or access to the production settings document. A server-side request boundary blocks every non-safe HTTP method before a production handler can acquire a token or call an external API.
+
+Generate the two demo secrets without placing the password in shell history:
+
+```powershell
+$demoPasswordHash = python -c "import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass.getpass('Demo password: ')))"
+$demoFlaskSecret = python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Deploy `infra/demo.bicep` independently. The image must be publicly accessible because the demo intentionally has no registry credential or managed identity:
+
+```powershell
+az deployment group create `
+  --resource-group <resource-group> `
+  --template-file infra/demo.bicep `
+  --parameters `
+    managedEnvironmentId=<container-apps-environment-resource-id> `
+    containerImage=<public-image-reference> `
+    demoUsername=demo `
+    demoPasswordHash=$demoPasswordHash `
+    flaskSecretKey=$demoFlaskSecret
+```
+
+Remove the isolated instance without changing production:
+
+```powershell
+az containerapp delete `
+  --resource-group <resource-group> `
+  --name ca-fabric-governance-hub-demo `
+  --yes
+```
+
+For local HTTP demo verification, set the same four runtime values plus `DEMO_COOKIE_SECURE=false` and start `app.py`. Never set `DEMO_COOKIE_SECURE=false` on the deployed HTTPS instance. `FABRIC_TENANT_ID` is intentionally unnecessary in demo mode.
+
 ---
 
 ## Authentication Model
