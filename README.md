@@ -285,6 +285,8 @@ Before creating standard or developer workspaces, the app validates the selected
 
 Standard workspace creation also requires `log_analytics_workspace_resource_id`, a complete Azure resource ID for `Microsoft.OperationalInsights/workspaces`. The app validates the resource through Azure Resource Manager before creating the Fabric workspace, derives the subscription, resource group, and workspace name server-side, and applies that immutable snapshot through the Power BI admin API. The Create Workspace form displays monitoring as mandatory and does not accept a browser-supplied monitoring destination.
 
+The selected monitoring provider is applied only during workspace creation. The application does not change or remove a workspace's monitoring integration afterward; post-creation changes must be managed from **Fabric Workspace settings > Monitoring**. Automated creation currently supports **None** when policy allows it and **Log Analytics**. Fabric Workspace Monitoring remains visible but unavailable until Microsoft Fabric provides a supported public API for third-party hosted applications.
+
 To inspect hosted values in **Configuration explorer** while public access is disabled:
 
 1. Connect to an administrative VM through Azure Bastion.
