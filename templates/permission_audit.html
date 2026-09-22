@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permission Audit</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; color: #323130; }
+        header { background: #6D6E71; color: white; padding: 20px 40px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 24px; font-weight: 600; }
+        header a { color: white; text-decoration: none; font-size: 14px; opacity: 0.8; }
+        .container { max-width: 1500px; margin: 0 auto; padding: 24px; }
+        .search-panel, .section { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); margin-bottom: 24px; }
+        .search-panel { padding: 24px; }
+        .search-panel label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+        .search-row { display: flex; gap: 10px; }
+        .search-row input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #c8c6c4; border-radius: 4px; font-size: 14px; }
+        .search-row input:focus { outline: none; border-color: #F37021; }
+        button { border: 0; border-radius: 4px; background: #F37021; color: white; padding: 10px 18px; font-weight: 600; cursor: pointer; }
+        button:disabled { background: #a19f9d; cursor: wait; }
+        .hint { color: #6D6E71; font-size: 12px; margin-top: 8px; }
+        .analysis-status { display: none; align-items: center; gap: 14px; border-left: 4px solid #F37021; background: #fff7f0; padding: 16px 18px; margin-bottom: 24px; }
+        .analysis-status.visible { display: flex; }
+        .analysis-spinner { width: 28px; height: 28px; flex: 0 0 28px; border: 3px solid #f4c7aa; border-top-color: #F37021; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .analysis-status strong { display: block; font-size: 14px; margin-bottom: 3px; }
+        .analysis-status p { color: #6D6E71; font-size: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .analysis-spinner { animation-duration: 1.8s; } }
+        .error, .warning { border-left: 4px solid #d13438; background: #fde7e9; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+        .warning { border-color: #F37021; background: #fff4ce; }
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .summary-card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); padding: 16px 24px; min-width: 170px; }
+        .summary-card .number { color: #F37021; font-size: 28px; font-weight: 700; }
+        .summary-card .label { color: #6D6E71; font-size: 12px; }
+        .principal { flex: 1; min-width: 280px; }
+        .principal .number { color: #323130; font-size: 18px; }
+        .section { overflow: hidden; }
+        .section-header { padding: 16px 24px; border-bottom: 1px solid #edebe9; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .section-header h2 { color: #6D6E71; font-size: 18px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf9f8; color: #6D6E71; padding: 10px 16px; text-align: left; font-size: 13px; white-space: nowrap; }
+        td { border-top: 1px solid #f3f2f1; padding: 10px 16px; font-size: 13px; vertical-align: top; }
+        tr:hover td { background: #fef5f0; }
+        .badge { display: inline-block; border-radius: 10px; background: #fde8da; color: #9a3e00; padding: 2px 8px; margin: 1px 3px 1px 0; font-size: 11px; font-weight: 600; }
+        .badge.inherited { background: #e8f2fb; color: #005a9e; }
+        .muted { color: #6D6E71; }
+        .empty { padding: 32px 24px; color: #6D6E71; text-align: center; }
+        @media (max-width: 640px) {
+            header { padding: 16px 20px; }
+            .container { padding: 16px; }
+            .search-row { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/">← Menu</a>
+        <h1>Permission Audit</h1>
+    </header>
+    <main class="container">
+        <form class="search-panel" id="permission-audit-form" method="get">
+            <label for="principal">Microsoft Entra user or group</label>
+            <div class="search-row">
+                <input id="principal" name="principal" value="{{ query }}" placeholder="Email, group name, or object ID" required>
+                <button id="find-access-button" type="submit">Find access</button>
+            </div>
+            <p class="hint">Includes direct grants and access inherited through nested group membership.</p>
+        </form>
+
+        <div class="analysis-status" id="analysis-status" role="status" aria-live="polite">
+            <div class="analysis-spinner" aria-hidden="true"></div>
+            <div>
+                <strong>Analyzing effective access...</strong>
+                <p>Resolving group membership and inspecting workspace and OneLake permissions. This may take several seconds.</p>
+            </div>
+        </div>
+
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+        {% if result %}
+            <div class="summary">
+                <div class="summary-card principal">
+                    <div class="number">{{ result.principal.displayName }}</div>
+                    <div class="label">{{ result.principal.type }}{% if result.principal.userPrincipalName %} · {{ result.principal.userPrincipalName }}{% endif %}</div>
+                </div>
+                <div class="summary-card"><div class="number">{{ result.workspaceCount }}</div><div class="label">Workspaces</div></div>
+                <div class="summary-card"><div class="number">{{ result.lakehouseCount }}</div><div class="label">Lakehouses</div></div>
+                <div class="summary-card"><div class="number">{{ result.effectivePrincipalCount }}</div><div class="label">Effective identities</div></div>
+            </div>
+
+            {% for warning in result.warnings %}<div class="warning">{{ warning }}</div>{% endfor %}
+
+            <section class="section">
+                <div class="section-header">
+                    <h2>Effective access</h2>
+                    <button type="button" onclick="exportAccess()">Export CSV</button>
+                </div>
+                {% if result.workspaces %}
+                <div class="table-wrap">
+                    <table id="access-table">
+                        <thead>
+                            <tr><th>Workspace</th><th>Workspace role</th><th>Lakehouse</th><th>OneLake role</th><th>Access scope</th><th>Granted through</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for workspace in result.workspaces %}
+                            {% if workspace.lakehouses %}
+                                {% for lakehouse in workspace.lakehouses %}
+                                    {% if lakehouse.roles %}
+                                        {% for role in lakehouse.roles %}
+                                        <tr>
+                                            <td><strong>{{ workspace.name }}</strong></td>
+                                            <td>{% for ws_role in workspace.roles %}<span class="badge">{{ ws_role.role }}</span>{% endfor %}{% if not workspace.roles %}<span class="muted">None</span>{% endif %}</td>
+                                            <td>{{ lakehouse.name }}</td>
+                                            <td><span class="badge">{{ role.role }}</span></td>
+                                            <td>{{ role.actions | join(', ') }} · {{ role.paths | join(', ') }}</td>
+                                            <td>{{ role.sourceName }} <span class="badge {{ 'inherited' if not role.direct else '' }}">{{ 'Inherited' if not role.direct else 'Direct' }}</span></td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td><strong>{{ workspace.name }}</strong></td>
+                                            <td>{% for ws_role in workspace.roles %}<span class="badge">{{ ws_role.role }}</span>{% endfor %}</td>
+                                            <td>{{ lakehouse.name }}</td>
+                                            <td class="muted">Workspace access</td>
+                                            <td class="muted">Defined by workspace role</td>
+                                            <td>{% for ws_role in workspace.roles %}{{ ws_role.sourceName }} <span class="badge {{ 'inherited' if not ws_role.direct else '' }}">{{ 'Inherited' if not ws_role.direct else 'Direct' }}</span>{% endfor %}</td>
+                                        </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td><strong>{{ workspace.name }}</strong></td>
+                                    <td>{% for ws_role in workspace.roles %}<span class="badge">{{ ws_role.role }}</span>{% endfor %}</td>
+                                    <td class="muted">No Lakehouse visible</td><td></td><td></td>
+                                    <td>{% for ws_role in workspace.roles %}{{ ws_role.sourceName }} <span class="badge {{ 'inherited' if not ws_role.direct else '' }}">{{ 'Inherited' if not ws_role.direct else 'Direct' }}</span>{% endfor %}</td>
+                                </tr>
+                            {% endif %}
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}<div class="empty">No workspace or OneLake access was found for this principal.</div>{% endif %}
+            </section>
+        {% endif %}
+    </main>
+    <script>
+        const auditForm = document.getElementById('permission-audit-form');
+        auditForm.addEventListener('submit', function(event) {
+            if (auditForm.dataset.submitted === 'true') {
+                event.preventDefault();
+                return;
+            }
+            auditForm.dataset.submitted = 'true';
+            document.getElementById('analysis-status').classList.add('visible');
+            const submitButton = document.getElementById('find-access-button');
+            submitButton.disabled = true;
+            submitButton.textContent = 'Analyzing...';
+            document.querySelector('main').setAttribute('aria-busy', 'true');
+        });
+
+        function exportAccess() {
+            const table = document.getElementById('access-table');
+            if (!table) return;
+            const csv = Array.from(table.querySelectorAll('tr')).map(row =>
+                Array.from(row.querySelectorAll('th,td')).map(cell =>
+                    '"' + cell.textContent.trim().replace(/\s+/g, ' ').replace(/"/g, '""') + '"'
+                ).join(',')
+            ).join('\n');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            link.download = 'permission_audit.csv';
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+    </script>
+</body>
+</html>
